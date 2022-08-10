@@ -25,28 +25,20 @@ public class Main {
             System.out.println("5.生成 Tempestissimo 所有解锁脚本");
             System.out.println("0.结束");
             switch (sc.nextLine()) {
-                case "1":
-                    new GetAllFiles().process();
-                    break;
-                case "2":
-                    new AffToRecord().process();
-                    break;
-                case "3":
-                    new SortSongInfo().process();
-                    break;
-                case "4":
-                    new DeleteRecords().process();
-                    break;
-                case "5":
-                    new UnlockTempestissimo().process();
-                    break;
-                case "0":
+                case "1" -> new GetAllFiles().process();
+                case "2" -> new AffToRecord().process();
+                case "3" -> new SortSongInfo().process();
+                case "4" -> new DeleteRecords().process();
+                case "5" -> new UnlockTempestissimo().process();
+                case "0" -> {
                     System.out.println("喜欢本项目的话，请给萌泪点个star！");
                     return;
-                default:
+                }
+                default -> {
                     System.out.println("输入有误！");
                     System.out.println();
                     System.out.println();
+                }
             }
         }
     }

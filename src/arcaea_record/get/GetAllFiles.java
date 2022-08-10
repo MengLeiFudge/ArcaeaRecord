@@ -84,32 +84,44 @@ public class GetAllFiles {
     }
 
     private void renameFile() {
-        String song = "";
-        File dir = null;
         for (File f : fileList) {
-            String fileName = f.getName();
             File newFile;
-            if (!fileName.matches(".+_[0-3]")) {
-                // 一首付费歌曲的音频
-                song = fileName;
-                dir = new File(f.getParentFile(), "dl_" + song);
-                dir.mkdirs();
-                newFile = new File(dir, "base.ogg");
-            } else if (fileName.equals("pragmatism_audio_3")) {
-                // 白魔王byd音频不一样
-                dir = new File(f.getParentFile(), "dl_pragmatism");
-                newFile = new File(dir, "3.ogg");
-            } else {
-                // 一个谱面
-                String[] data = fileName.split("_");
-                if (!data[0].equals(song)) {
-                    // BYD难度的免费曲，没有文件夹
-                    song = data[0];
-                    dir = new File(f.getParentFile(), song);
+            String fileName = f.getName();
+            if (fileName.endsWith(".pre")) {
+                // 歌曲未下载完成或其他原因，testify使用下载全部也不行，必须在歌曲预览界面下载
+                System.out.println("歌曲未下载完成或其他原因：" + f.getAbsolutePath());
+                System.out.println("请下载该歌曲后再运行！");
+                System.exit(0);
+            }
+            if (!fileName.contains("_")) {
+                // aegleseeker -> base.ogg
+                File dir = new File(f.getParentFile(), "dl_" + fileName);
+                if (!dir.exists()) {
                     dir.mkdirs();
                 }
-                // 现在必定已有文件夹
-                newFile = new File(dir, data[1] + ".aff");
+                newFile = new File(dir, "base.ogg");
+            } else {
+                String sid = fileName.substring(0, fileName.indexOf("_"));
+                File dir = new File(f.getParentFile(), "dl_" + sid);
+                if (!dir.exists()) {
+                    dir.mkdirs();
+                }
+                String end = fileName.substring(fileName.indexOf("_") + 1);
+                switch (end) {
+                    // aegleseeker_0 -> 0.aff
+                    case "0", "1", "2", "3" -> newFile = new File(dir, end + ".aff");
+                    // dropdead_audio_3 -> 3.ogg（目前只有audio_3）
+                    case "audio_0", "audio_1", "audio_2", "audio_3" ->
+                            newFile = new File(dir, end.substring(end.length() - 1) + ".ogg");
+                    // arcanaeden_video.mp4 -> video.mp4, arcanaeden_video_audio.ogg -> video_audio.ogg
+                    case "video.mp4", "video_audio.ogg" -> newFile = new File(dir, end);
+                    default -> {
+                        System.out.println("未知文件类型：" + f.getAbsolutePath());
+                        System.out.println("请修改代码后再运行！");
+                        System.exit(0);
+                        return;
+                    }
+                }
             }
             // 避免重命名失败，先将原有的删除
             newFile.delete();
