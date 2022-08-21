@@ -27,34 +27,13 @@ public class Main {
             System.out.println("6.生成 Tempestissimo 所有解锁脚本");
             System.out.println("0.结束");
             switch (sc.nextLine()) {
-<<<<<<< Updated upstream
                 case "1" -> new GetAllFiles().process();
-                case "2" -> new AffToRecord().process();
+                case "2" -> new AddNewSongInfo().process();
                 case "3" -> new SortSongInfo().process();
-                case "4" -> new DeleteRecords().process();
-                case "5" -> new UnlockTempestissimo().process();
+                case "4" -> new AffToRecord().process();
+                case "5" -> new DeleteRecords().process();
+                case "6" -> new UnlockTempestissimo().process();
                 case "0" -> {
-=======
-                case "1":
-                    new GetAllFiles().process();
-                    break;
-                case "2":
-                    new AddNewSongInfo().process();
-                    break;
-                case "3":
-                    new SortSongInfo().process();
-                    break;
-                case "4":
-                    new AffToRecord().process();
-                    break;
-                case "5":
-                    new DeleteRecords().process();
-                    break;
-                case "6":
-                    new UnlockTempestissimo().process();
-                    break;
-                case "0":
->>>>>>> Stashed changes
                     System.out.println("喜欢本项目的话，请给萌泪点个star！");
                     return;
                 }
