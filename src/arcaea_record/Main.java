@@ -3,7 +3,8 @@ package arcaea_record;
 import arcaea_record.convert.AffToRecord;
 import arcaea_record.delete.DeleteRecords;
 import arcaea_record.get.GetAllFiles;
-import arcaea_record.sort.SortSongInfo;
+import arcaea_record.song_info.AddNewSongInfo;
+import arcaea_record.song_info.SortSongInfo;
 import arcaea_record.unlock.UnlockTempestissimo;
 
 import java.util.Scanner;
@@ -19,18 +20,41 @@ public class Main {
             System.out.println("※ 该项目仅供学习研究之用 ※");
             System.out.println("选择功能：");
             System.out.println("1.获取所有谱面、音乐、曲绘，以及搭档头像、全身图");
-            System.out.println("2.谱面文件转换为脚本");
+            System.out.println("2.对 songInfo.csv 增加未知曲目的名称并显示 wiki 网址");
             System.out.println("3.对 songInfo.csv 排序");
-            System.out.println("4.删除指定文件夹（包括子文件夹）内所有脚本");
-            System.out.println("5.生成 Tempestissimo 所有解锁脚本");
+            System.out.println("4.谱面文件转换为脚本");
+            System.out.println("5.删除指定文件夹（包括子文件夹）内所有脚本");
+            System.out.println("6.生成 Tempestissimo 所有解锁脚本");
             System.out.println("0.结束");
             switch (sc.nextLine()) {
+<<<<<<< Updated upstream
                 case "1" -> new GetAllFiles().process();
                 case "2" -> new AffToRecord().process();
                 case "3" -> new SortSongInfo().process();
                 case "4" -> new DeleteRecords().process();
                 case "5" -> new UnlockTempestissimo().process();
                 case "0" -> {
+=======
+                case "1":
+                    new GetAllFiles().process();
+                    break;
+                case "2":
+                    new AddNewSongInfo().process();
+                    break;
+                case "3":
+                    new SortSongInfo().process();
+                    break;
+                case "4":
+                    new AffToRecord().process();
+                    break;
+                case "5":
+                    new DeleteRecords().process();
+                    break;
+                case "6":
+                    new UnlockTempestissimo().process();
+                    break;
+                case "0":
+>>>>>>> Stashed changes
                     System.out.println("喜欢本项目的话，请给萌泪点个star！");
                     return;
                 }

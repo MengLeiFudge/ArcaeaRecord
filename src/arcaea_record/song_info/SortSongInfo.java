@@ -1,4 +1,4 @@
-package arcaea_record.sort;
+package arcaea_record.song_info;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
