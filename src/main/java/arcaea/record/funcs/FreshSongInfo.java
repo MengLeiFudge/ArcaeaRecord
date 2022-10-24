@@ -1,4 +1,6 @@
-package arcaea_record.song_info;
+package arcaea.record.funcs;
+
+import arcaea.record.Main;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -8,12 +10,10 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 
-import static arcaea_record.Main.sc;
-
 /**
  * @author MengLeiFudge
  */
-public class SortSongInfo {
+public class FreshSongInfo {
     public void process() {
         System.out.println("开始处理谱面信息文件...");
         File oldFile = new File("songInfo.csv");
@@ -72,7 +72,7 @@ public class SortSongInfo {
         newFile.renameTo(oldFile);
         System.out.println("已将 " + list.size() + " 条信息排序完毕！");
         System.out.println("回车继续...");
-        sc.nextLine();
+        Main.sc.nextLine();
         System.out.println();
     }
 }

@@ -1,8 +1,7 @@
-package arcaea_record.convert;
+package arcaea.record.base;
 
-import arcaea_record.convert.base.AffProcess;
-import arcaea_record.convert.base.BaseProcess;
-import org.apache.commons.lang.SerializationUtils;
+import arcaea.record.SettingsAndUtils;
+import org.apache.commons.lang3.SerializationUtils;
 
 import java.text.DecimalFormat;
 import java.util.List;
@@ -13,7 +12,6 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static arcaea_record.SettingsAndUtils.THREAD_NUM;
 import static java.lang.Thread.sleep;
 
 /**
@@ -35,9 +33,11 @@ public class ConvertThreadPoolExecutor implements Runnable {
         @Override
         public Thread newThread(Runnable r) {
             Thread t = new Thread(group, r, namePrefix + threadNumber.getAndIncrement(), 0);
+            // 设置为非后台进程
             if (t.isDaemon()) {
                 t.setDaemon(false);
             }
+            // 设置为普通优先级
             if (t.getPriority() != Thread.NORM_PRIORITY) {
                 t.setPriority(Thread.NORM_PRIORITY);
             }
@@ -60,11 +60,11 @@ public class ConvertThreadPoolExecutor implements Runnable {
             return;
         }
         ExecutorService pool = new ThreadPoolExecutor(
-                THREAD_NUM, THREAD_NUM,
+                SettingsAndUtils.THREAD_NUM, SettingsAndUtils.THREAD_NUM,
                 0L, TimeUnit.MILLISECONDS,
-                new LinkedBlockingQueue<>(THREAD_NUM),
+                new LinkedBlockingQueue<>(),
                 new ConvertThreadFactory());
-        for (int i = 0; i < THREAD_NUM; i++) {
+        for (int i = 0; i < SettingsAndUtils.THREAD_NUM; i++) {
             pool.execute(new ConvertThreadPoolExecutor(i));
         }
         pool.shutdown();
@@ -93,7 +93,7 @@ public class ConvertThreadPoolExecutor implements Runnable {
     @Override
     public void run() {
         for (int i = 0; i < processList.size(); i++) {
-            if (i % THREAD_NUM == threadNo) {
+            if (i % SettingsAndUtils.THREAD_NUM == threadNo) {
                 AffProcess affProcess = processList.get(i);
                 Record baseRecord = new Record(affProcess.getResolution());
                 baseRecord.getNoteInfo(affProcess.getAffFile());

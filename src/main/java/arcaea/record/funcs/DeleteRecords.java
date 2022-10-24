@@ -1,12 +1,12 @@
-package arcaea_record.delete;
+package arcaea.record.funcs;
+
+import arcaea.record.SettingsAndUtils;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.Objects;
 
-import static arcaea_record.Main.sc;
-import static arcaea_record.SettingsAndUtils.getAffDir;
-import static arcaea_record.SettingsAndUtils.getVmsDir;
+import static arcaea.record.Main.sc;
 
 /**
  * @author MengLeiFudge
@@ -25,9 +25,9 @@ public class DeleteRecords {
 
     private void init() {
         System.out.println("输入要删除脚本的文件夹路径");
-        File defFile = getAffDir();
+        File defFile = SettingsAndUtils.getAffDir();
         System.out.println("1表示 " + defFile);
-        System.out.println("2表示 " + getVmsDir());
+        System.out.println("2表示 " + SettingsAndUtils.getVmsDir());
         System.out.println("回车表示1，输入其他表示指定目录");
         String s = sc.nextLine();
         switch (s) {
@@ -36,7 +36,7 @@ public class DeleteRecords {
                 destDir = defFile;
                 break;
             case "2":
-                destDir = getVmsDir();
+                destDir = SettingsAndUtils.getVmsDir();
                 break;
             default:
                 destDir = new File(s);

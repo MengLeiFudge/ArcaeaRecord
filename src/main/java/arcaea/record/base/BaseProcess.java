@@ -1,4 +1,4 @@
-package arcaea_record.convert.base;
+package arcaea.record.base;
 
 import lombok.Data;
 

@@ -1,8 +1,8 @@
-package arcaea_record.unlock;
+package arcaea.record.funcs;
 
-import arcaea_record.SettingsAndUtils;
-import arcaea_record.convert.ConvertThreadPoolExecutor;
-import arcaea_record.convert.base.AffProcess;
+import arcaea.record.SettingsAndUtils;
+import arcaea.record.base.ConvertThreadPoolExecutor;
+import arcaea.record.base.AffProcess;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -12,16 +12,13 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 
-import static arcaea_record.Main.sc;
-import static arcaea_record.SettingsAndUtils.DIFFICULTY_STR;
-import static arcaea_record.SettingsAndUtils.getAffDir;
-import static arcaea_record.SettingsAndUtils.getVmsDir;
+import static arcaea.record.Main.sc;
 
 /**
  * @author MengLeiFudge
  */
-public class UnlockTempestissimo {
-    public UnlockTempestissimo() {
+public class CreateUnlockRecords {
+    public CreateUnlockRecords() {
     }
 
     private final File[] affFiles = new File[4];
@@ -43,7 +40,7 @@ public class UnlockTempestissimo {
 
     private boolean init() {
         System.out.println("输入 Tempestissimo 谱面所在的【文件夹】路径");
-        File defFile = new File(getAffDir(), "dl_tempestissimo");
+        File defFile = new File(SettingsAndUtils.getAffDir(), "dl_tempestissimo");
         System.out.println("回车表示 " + defFile);
         String s = sc.nextLine();
         File affDir = s.equals("") ? defFile : new File(s);
@@ -55,7 +52,7 @@ public class UnlockTempestissimo {
             }
         }
         System.out.println("输入要生成脚本的文件夹路径");
-        defFile = new File(getVmsDir(), "tempestissimo解锁脚本");
+        defFile = new File(SettingsAndUtils.getVmsDir(), "tempestissimo解锁脚本");
         System.out.println("回车表示 " + defFile);
         s = sc.nextLine();
         recordDir = s.equals("") ? defFile : new File(s);
@@ -66,7 +63,7 @@ public class UnlockTempestissimo {
         ArrayList<AffProcess> processList = new ArrayList<>();
         for (int i = 0; i < 4; i++) {
             AffProcess process = new AffProcess(affFiles[i], "Temp",
-                    DIFFICULTY_STR[i], SettingsAndUtils.Resolution.R1280_720);
+                    SettingsAndUtils.DIFFICULTY_STR[i], SettingsAndUtils.Resolution.R1280_720);
             process.addBaseProcess(recordDir, 0, 0, true, false);
             processList.add(process);
         }
@@ -74,10 +71,10 @@ public class UnlockTempestissimo {
     }
 
     public void createUnlockRecord() {
-        File pst = new File(recordDir, "Temp_" + DIFFICULTY_STR[0] + "_原版_0L0小.record");
-        File prs = new File(recordDir, "Temp_" + DIFFICULTY_STR[1] + "_原版_0L0小.record");
-        File ftr = new File(recordDir, "Temp_" + DIFFICULTY_STR[2] + "_原版_0L0小.record");
-        File byd = new File(recordDir, "Temp_" + DIFFICULTY_STR[3] + "_原版_0L0小.record");
+        File pst = new File(recordDir, "Temp_" + SettingsAndUtils.DIFFICULTY_STR[0] + "_原版_0L0小.record");
+        File prs = new File(recordDir, "Temp_" + SettingsAndUtils.DIFFICULTY_STR[1] + "_原版_0L0小.record");
+        File ftr = new File(recordDir, "Temp_" + SettingsAndUtils.DIFFICULTY_STR[2] + "_原版_0L0小.record");
+        File byd = new File(recordDir, "Temp_" + SettingsAndUtils.DIFFICULTY_STR[3] + "_原版_0L0小.record");
         if (!pst.exists() || !prs.exists() || !ftr.exists() || !byd.exists()) {
             System.out.println("目录下无对应脚本文件，需检查代码！");
             return;

@@ -1,8 +1,9 @@
-package arcaea_record.convert;
+package arcaea.record.base;
 
-import arcaea_record.convert.base.ArcAction;
-import arcaea_record.convert.base.SimpleAction;
-import arcaea_record.convert.base.TouchIdManager;
+import arcaea.record.SettingsAndUtils;
+import arcaea.record.base.ArcAction;
+import arcaea.record.base.SimpleAction;
+import arcaea.record.base.TouchIdManager;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.serializer.SerializerFeature;
@@ -21,19 +22,13 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
 
-import static arcaea_record.SettingsAndUtils.ARC_KINDS;
-import static arcaea_record.SettingsAndUtils.CLICK_TIME;
-import static arcaea_record.SettingsAndUtils.EFFECT_TIME;
-import static arcaea_record.SettingsAndUtils.MAX_TOUCH_NUM;
-import static arcaea_record.SettingsAndUtils.Resolution;
-
 /**
  * 谱面数据结构.
  *
  * @author MengLeiFudge
  */
 public class Record implements Serializable {
-    private final Resolution resolution;
+    private final SettingsAndUtils.Resolution resolution;
     /**
      * 谱面按键时间最小值.
      */
@@ -55,9 +50,9 @@ public class Record implements Serializable {
      */
     private int clickNum = 0;
     private final TouchIdManager touchIdManager = new TouchIdManager();
-    private final int[] arcEndTime = new int[ARC_KINDS];
-    private final int[] arcEndX = new int[ARC_KINDS];
-    private final int[] arcEndY = new int[ARC_KINDS];
+    private final int[] arcEndTime = new int[SettingsAndUtils.ARC_KINDS];
+    private final int[] arcEndX = new int[SettingsAndUtils.ARC_KINDS];
+    private final int[] arcEndY = new int[SettingsAndUtils.ARC_KINDS];
     private final ArrayList<SimpleAction> simpleActions = new ArrayList<>();
 
 
@@ -86,7 +81,7 @@ public class Record implements Serializable {
          */
     }
 
-    Record(Resolution resolution) {
+    Record(SettingsAndUtils.Resolution resolution) {
         this.resolution = resolution;
         //Arrays.fill(arcEndTime,-999999);
         //Arrays.fill(arcEndX,-999999);
@@ -343,7 +338,7 @@ public class Record implements Serializable {
          */
         int id = touchIdManager.getId(beginTime, endTime);
         if (id == -1) {
-            throw new ArrayIndexOutOfBoundsException("所需ID超过" + MAX_TOUCH_NUM + "，需扩充数组！");
+            throw new ArrayIndexOutOfBoundsException("所需ID超过" + SettingsAndUtils.MAX_TOUCH_NUM + "，需扩充数组！");
         } else {
             return id;
         }
@@ -390,7 +385,7 @@ public class Record implements Serializable {
     }
 
     public void click(int time, int position) {
-        hold(time, time + CLICK_TIME, position);
+        hold(time, time + SettingsAndUtils.CLICK_TIME, position);
         clickNum++;
     }
 
@@ -429,10 +424,10 @@ public class Record implements Serializable {
             // 去掉没有判定点的蛇
             return;
         }
-        if (color < 0 || color >= ARC_KINDS) {
+        if (color < 0 || color >= SettingsAndUtils.ARC_KINDS) {
             throw new IllegalArgumentException("未知颜色的蛇：" + color);
         }
-        int useID = MAX_TOUCH_NUM + color;
+        int useID = SettingsAndUtils.MAX_TOUCH_NUM + color;
         // 需要抬起的条件：之前有同色蛇，且之前最近的同色蛇蛇尾与该蛇蛇头相距 100 ms 以上
         boolean needUp = arcEndTime[color] != 0 && beginTime > arcEndTime[color] + 100;
         if (needUp) {
@@ -472,7 +467,7 @@ public class Record implements Serializable {
 
     public void arctap(int beginTime, int endTime, double beginX, double endX,
                        String type, double beginY, double endY, int time) {
-        press(time, time + CLICK_TIME,
+        press(time, time + SettingsAndUtils.CLICK_TIME,
                 getX(beginTime, endTime, beginX, endX, type, beginY, endY, time) + getRandomPositionDeflection(),
                 getY(beginTime, endTime, beginX, endX, type, beginY, endY, time) + getRandomPositionDeflection());
         clickNum++;
@@ -483,12 +478,12 @@ public class Record implements Serializable {
 
     public void optimize(String affPath, int miss, int minPure) {
         // 蛇最后一下还未抬起，应在此处抬起
-        for (int color = 0; color < ARC_KINDS; color++) {
+        for (int color = 0; color < SettingsAndUtils.ARC_KINDS; color++) {
             if (arcEndTime[color] == 0) {
                 // 如果没有出现这个颜色的蛇，无需抬起，直接跳过
                 continue;
             }
-            up(arcEndTime[color], MAX_TOUCH_NUM + color, arcEndX[color], arcEndY[color]);
+            up(arcEndTime[color], SettingsAndUtils.MAX_TOUCH_NUM + color, arcEndX[color], arcEndY[color]);
         }
         Collections.sort(simpleActions);
         //debug(1);
@@ -524,14 +519,14 @@ public class Record implements Serializable {
      * 优化以长条结尾、地键、天键为蛇头的蛇相关操作.
      */
     private void optimizeArcActions(String affPath) {
-        boolean[] isArcBegin = new boolean[ARC_KINDS];
+        boolean[] isArcBegin = new boolean[SettingsAndUtils.ARC_KINDS];
         Arrays.fill(isArcBegin, true);
         for (int i = 0; i < simpleActions.size(); i++) {
             SimpleAction actionArc = simpleActions.get(i);
             if (!actionArc.isArc()) {
                 continue;
             }
-            int color = actionArc.getId() - MAX_TOUCH_NUM;
+            int color = actionArc.getId() - SettingsAndUtils.MAX_TOUCH_NUM;
             if (!actionArc.isPressDown()) {
                 // 蛇结尾抬手时，重置 isArcBegin[color] 为 true
                 isArcBegin[color] = true;
@@ -582,7 +577,7 @@ public class Record implements Serializable {
                     //}
                     if (actionArc.getTiming() == actionNotArc.getTiming()) {
                         // 蛇头与按下时间相同
-                        if (actionNotArc2.getTiming() - actionNotArc.getTiming() == CLICK_TIME) {
+                        if (actionNotArc2.getTiming() - actionNotArc.getTiming() == SettingsAndUtils.CLICK_TIME) {
                             // 该键是地键/天键，应移除该键的按下、抬起
                             // 注意，必须先移除后面的操作
                             simpleActions.remove(k);
@@ -599,7 +594,7 @@ public class Record implements Serializable {
                         }
                     } else {
                         // 蛇头与按下时间不同
-                        if (actionNotArc2.getTiming() - actionNotArc.getTiming() == CLICK_TIME) {
+                        if (actionNotArc2.getTiming() - actionNotArc.getTiming() == SettingsAndUtils.CLICK_TIME) {
                             // 该键是地键/天键，应移除该键的抬起，并将按下改为蛇的按下
                             simpleActions.remove(k);
                             i--;
@@ -671,7 +666,7 @@ public class Record implements Serializable {
             // o1表示按键按下
             SimpleAction o1 = simpleActions.get(i);
             // 忽略与蛇有关的操作、忽略抬起操作
-            if (o1.getId() >= MAX_TOUCH_NUM || !o1.isPressDown()) {
+            if (o1.getId() >= SettingsAndUtils.MAX_TOUCH_NUM || !o1.isPressDown()) {
                 continue;
             }
             for (int j = i + 1; ; j++) {
@@ -681,7 +676,7 @@ public class Record implements Serializable {
                     continue;
                 }
                 // id相同，无论是什么，都要结束循环
-                if (o2.getTiming() - o1.getTiming() == CLICK_TIME) {
+                if (o2.getTiming() - o1.getTiming() == SettingsAndUtils.CLICK_TIME) {
                     // 非长条
                     boolean shouldMissThisNote = false;
                     // 判断是否需要miss该按键
@@ -692,7 +687,7 @@ public class Record implements Serializable {
                         // 避免冲突，若该按键后一定时间内有紧跟的键，则该键不能miss
                         for (int k = j + 1; k < simpleActions.size(); k++) {
                             SimpleAction o3 = simpleActions.get(k);
-                            if (o3.getTiming() - o2.getTiming() > EFFECT_TIME) {
+                            if (o3.getTiming() - o2.getTiming() > SettingsAndUtils.EFFECT_TIME) {
                                 break;
                             }
                             if (Math.abs(o2.getX() - o3.getX()) < resolution.getMaxX() * 0.09375

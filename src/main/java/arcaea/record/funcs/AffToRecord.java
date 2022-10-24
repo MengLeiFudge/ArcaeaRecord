@@ -1,7 +1,10 @@
-package arcaea_record.convert;
+package arcaea.record.funcs;
 
-import arcaea_record.convert.base.AffProcess;
-import arcaea_record.convert.base.MissAndMinPure;
+import arcaea.record.Main;
+import arcaea.record.SettingsAndUtils;
+import arcaea.record.base.MissAndMinPure;
+import arcaea.record.base.AffProcess;
+import arcaea.record.base.ConvertThreadPoolExecutor;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -17,16 +20,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
-
-import static arcaea_record.Main.sc;
-import static arcaea_record.SettingsAndUtils.DIFFICULTY_STR;
-import static arcaea_record.SettingsAndUtils.Mirror;
-import static arcaea_record.SettingsAndUtils.Resolution;
-import static arcaea_record.SettingsAndUtils.RunState;
-import static arcaea_record.SettingsAndUtils.getAffDir;
-import static arcaea_record.SettingsAndUtils.getApk;
-import static arcaea_record.SettingsAndUtils.getInfo;
-import static arcaea_record.SettingsAndUtils.getVmsDir;
 
 /**
  * 谱面文件转脚本的入口.
@@ -46,18 +39,18 @@ public class AffToRecord {
     private File targetDir;
     private int minDifficulty;
     private int maxDifficulty;
-    private RunState runState;
-    private Mirror mirror;
+    private SettingsAndUtils.RunState runState;
+    private SettingsAndUtils.Mirror mirror;
     private MissAndMinPure missAndMinPure;
-    private Resolution resolution;
+    private SettingsAndUtils.Resolution resolution;
     private final List<File> zipDirList = new ArrayList<>();
 
     public void process() {
-        System.out.println("使用一键生成脚本（谱面目录使用 " + getAffDir() + "）？");
+        System.out.println("使用一键生成脚本（谱面目录使用 " + SettingsAndUtils.getAffDir() + "）？");
         System.out.println("注：包含ftr+byd 0L2%、1L6%、991w8%、982w10% 原版+镜像，以及全难度理论值原版");
         System.out.println("回车表示一键生成脚本");
         System.out.println("输入其他内容表示自定义生成脚本");
-        String s = sc.nextLine();
+        String s = Main.sc.nextLine();
         if ("".equals(s)) {
             auto();
         } else {
@@ -83,7 +76,7 @@ public class AffToRecord {
             System.out.println("已将所有脚本打包至 zip！");
         }
         System.out.println("回车继续...");
-        sc.nextLine();
+        Main.sc.nextLine();
         System.out.println();
     }
 
@@ -91,14 +84,14 @@ public class AffToRecord {
      * 使用默认值生成通常需要的全部脚本.
      */
     private void auto() {
-        affDir = getAffDir();
+        affDir = SettingsAndUtils.getAffDir();
         minDifficulty = 2;
         maxDifficulty = 3;
-        runState = RunState.SONG_START_BEGIN;
-        mirror = Mirror.BOTH;
-        resolution = Resolution.R1280_720;
+        runState = SettingsAndUtils.RunState.SONG_START_BEGIN;
+        mirror = SettingsAndUtils.Mirror.BOTH;
+        resolution = SettingsAndUtils.Resolution.R1280_720;
 
-        targetDir = new File(getVmsDir(), "脚本/0L2%");
+        targetDir = new File(SettingsAndUtils.getVmsDir(), "脚本/0L2%");
         try {
             targetDir = targetDir.getCanonicalFile();
         } catch (IOException e) {
@@ -108,7 +101,7 @@ public class AffToRecord {
         zipDirList.add(targetDir);
         getProcessList(affDir);
 
-        targetDir = new File(getVmsDir(), "脚本/1L6%");
+        targetDir = new File(SettingsAndUtils.getVmsDir(), "脚本/1L6%");
         try {
             targetDir = targetDir.getCanonicalFile();
         } catch (IOException e) {
@@ -118,7 +111,7 @@ public class AffToRecord {
         zipDirList.add(targetDir);
         getProcessList(affDir);
 
-        targetDir = new File(getVmsDir(), "脚本/991w8%");
+        targetDir = new File(SettingsAndUtils.getVmsDir(), "脚本/991w8%");
         try {
             targetDir = targetDir.getCanonicalFile();
         } catch (IOException e) {
@@ -128,7 +121,7 @@ public class AffToRecord {
         zipDirList.add(targetDir);
         getProcessList(affDir);
 
-        targetDir = new File(getVmsDir(), "脚本/982w10%");
+        targetDir = new File(SettingsAndUtils.getVmsDir(), "脚本/982w10%");
         try {
             targetDir = targetDir.getCanonicalFile();
         } catch (IOException e) {
@@ -138,18 +131,18 @@ public class AffToRecord {
         zipDirList.add(targetDir);
         getProcessList(affDir);
 
-        targetDir = new File(getVmsDir(), "脚本/全难度理论值");
+        targetDir = new File(SettingsAndUtils.getVmsDir(), "脚本/全难度理论值");
         try {
             targetDir = targetDir.getCanonicalFile();
         } catch (IOException e) {
             e.printStackTrace();
         }
         minDifficulty = 0;
-        mirror = Mirror.ORIGIN;
+        mirror = SettingsAndUtils.Mirror.ORIGIN;
         missAndMinPure = new MissAndMinPure("0", "0");
         getProcessList(affDir);
 
-        targetDir = new File(getVmsDir(), "脚本/低难度理论值");
+        targetDir = new File(SettingsAndUtils.getVmsDir(), "脚本/低难度理论值");
         try {
             targetDir = targetDir.getCanonicalFile();
         } catch (IOException e) {
@@ -166,18 +159,18 @@ public class AffToRecord {
      */
     private void diy() {
         System.out.println("输入要转换的谱面文件夹路径");
-        File defFile = getAffDir();
+        File defFile = SettingsAndUtils.getAffDir();
         System.out.println("回车表示 " + defFile);
-        String s = sc.nextLine();
+        String s = Main.sc.nextLine();
         affDir = s.equals("") ? defFile : new File(s);
 
         System.out.println("选择目标文件夹路径：");
-        defFile = new File(getVmsDir() , "operationRecords");
+        defFile = new File(SettingsAndUtils.getVmsDir(), "operationRecords");
         System.out.println("1.仅使用新路径，在 " + defFile + " 集中生成脚本");
         System.out.println("2.仅使用原始路径，在每个谱面所对应文件夹下分别生成脚本");
         System.out.println("还可以直接输入路径，此时仅使用输入的新路径");
         System.out.println("回车表示 1");
-        s = sc.nextLine();
+        s = Main.sc.nextLine();
         switch (s) {
             case "1":
             case "":
@@ -200,12 +193,12 @@ public class AffToRecord {
         System.out.println("选择最低难度：");
         System.out.println("0 表示 pst，1 表示 prs，2 表示 ftr，3 表示 byd");
         System.out.println("回车表示 2，即 ftr");
-        s = sc.nextLine();
+        s = Main.sc.nextLine();
         minDifficulty = s.length() == 0 ? 2 : Integer.parseInt(s);
         System.out.println("选择最高难度：");
         System.out.println("0 表示 pst，1 表示 prs，2 表示 ftr，3 表示 byd");
         System.out.println("回车表示 3，即 byd");
-        s = sc.nextLine();
+        s = Main.sc.nextLine();
         maxDifficulty = s.length() == 0 ? 3 : Integer.parseInt(s);
 
         System.out.println("选择脚本运行情况：");
@@ -213,59 +206,59 @@ public class AffToRecord {
         System.out.println("2.第一个键点击的同时运行脚本");
         System.out.println("3.同时生成以上两种脚本");
         System.out.println("回车表示 1");
-        s = sc.nextLine();
+        s = Main.sc.nextLine();
         switch (s) {
             case "2":
-                runState = RunState.FIRST_NOTE_BEGIN;
+                runState = SettingsAndUtils.RunState.FIRST_NOTE_BEGIN;
                 break;
             case "3":
-                runState = RunState.BOTH;
+                runState = SettingsAndUtils.RunState.BOTH;
                 break;
             case "1":
             case "":
             default:
-                runState = RunState.SONG_START_BEGIN;
+                runState = SettingsAndUtils.RunState.SONG_START_BEGIN;
         }
 
         System.out.println("选择镜像情况：");
         System.out.println("1.正常  2.镜像  3.同时生成以上两种脚本");
         System.out.println("回车表示 3");
-        s = sc.nextLine();
+        s = Main.sc.nextLine();
         switch (s) {
             case "1":
-                mirror = Mirror.ORIGIN;
+                mirror = SettingsAndUtils.Mirror.ORIGIN;
                 break;
             case "2":
-                mirror = Mirror.MIRROR;
+                mirror = SettingsAndUtils.Mirror.MIRROR;
                 break;
             case "3":
             case "":
             default:
-                mirror = Mirror.BOTH;
+                mirror = SettingsAndUtils.Mirror.BOTH;
         }
 
         System.out.println("输入单点miss数（如3）或目标分数上限（以W/w结尾，如990w）：");
         System.out.println("回车表示 991w");
-        s = sc.nextLine();
+        s = Main.sc.nextLine();
         String missStr = s.length() == 0 ? "991w" : s;
         String minPureStr = "0";
-        if (runState == RunState.SONG_START_BEGIN || runState == RunState.BOTH) {
+        if (runState == SettingsAndUtils.RunState.SONG_START_BEGIN || runState == SettingsAndUtils.RunState.BOTH) {
             System.out.println("输入小p数（如50）或小p比例（以%结尾，如5.6%）");
             System.out.println("回车表示 8%");
-            s = sc.nextLine();
+            s = Main.sc.nextLine();
             minPureStr = s.length() == 0 ? "8%" : s;
         }
         missAndMinPure = new MissAndMinPure(missStr, minPureStr);
 
         System.out.println("选择分辨率：");
-        Resolution[] resolutions = Resolution.values();
+        SettingsAndUtils.Resolution[] resolutions = SettingsAndUtils.Resolution.values();
         int i = 1;
-        for (Resolution r : resolutions) {
+        for (SettingsAndUtils.Resolution r : resolutions) {
             System.out.println((i++) + "." + r.getDescribe());
         }
-        System.out.println("回车表示 " + Resolution.R1280_720.getDescribe());
-        s = sc.nextLine();
-        resolution = s.length() == 0 ? Resolution.R1280_720 : resolutions[Integer.parseInt(s) - 1];
+        System.out.println("回车表示 " + SettingsAndUtils.Resolution.R1280_720.getDescribe());
+        s = Main.sc.nextLine();
+        resolution = s.length() == 0 ? SettingsAndUtils.Resolution.R1280_720 : resolutions[Integer.parseInt(s) - 1];
 
         getProcessList(affDir);
     }
@@ -305,7 +298,7 @@ public class AffToRecord {
         String parentDirName = file.getParentFile().getName();
         String song = parentDirName.toLowerCase(Locale.ROOT);
         int note = 1000;
-        String[] info = getInfo(parentDirName);
+        String[] info = SettingsAndUtils.getInfo(parentDirName);
         boolean error = false;
         if (info.length == 0) {
             System.out.println(parentDirName + " 的信息不存在！");
@@ -317,18 +310,18 @@ public class AffToRecord {
                 song = info[1].toLowerCase(Locale.ROOT)
                         .replaceAll("[:]", "：")
                         .replaceAll("[?]", "？")
-                        .replaceAll("[\\/:*?\"<>|]", "");
+                        .replaceAll("[\\\\/:*?\"<>|]", "");
                 note = Integer.parseInt(info[difficulty + 2]);
             } catch (ArrayIndexOutOfBoundsException | NumberFormatException e) {
                 //e.printStackTrace();
-                System.out.println(parentDirName + " 的 "+ fileName +" 信息部分缺失或格式错误！");
+                System.out.println(parentDirName + " 的 " + fileName + " 信息部分缺失或格式错误！");
                 error = true;
             }
         }
         if (error) {
             System.out.println("是否使用 " + song + " 作为歌曲名，并使用 " + note + " 作为 note 数？");
             System.out.println("回车表示使用上方信息并继续，其他表示不处理该谱面");
-            if (!"".equals(sc.nextLine())) {
+            if (!"".equals(Main.sc.nextLine())) {
                 return;
             }
         }
@@ -343,25 +336,25 @@ public class AffToRecord {
             }
         }
         if (affProcess == null) {
-            affProcess = new AffProcess(file, song, DIFFICULTY_STR[difficulty], resolution);
+            affProcess = new AffProcess(file, song, SettingsAndUtils.DIFFICULTY_STR[difficulty], resolution);
             processList.add(affProcess);
         }
         File targetDir0 = targetDir == null ? affProcess.getAffFile().getParentFile() : targetDir;
-        if (runState == RunState.SONG_START_BEGIN || runState == RunState.BOTH) {
+        if (runState == SettingsAndUtils.RunState.SONG_START_BEGIN || runState == SettingsAndUtils.RunState.BOTH) {
             minPure = missAndMinPure.getMinPureNum(note);
-            if (mirror == Mirror.ORIGIN || mirror == Mirror.BOTH) {
+            if (mirror == SettingsAndUtils.Mirror.ORIGIN || mirror == SettingsAndUtils.Mirror.BOTH) {
                 affProcess.addBaseProcess(targetDir0, miss, minPure, true, false);
             }
-            if (mirror == Mirror.MIRROR || mirror == Mirror.BOTH) {
+            if (mirror == SettingsAndUtils.Mirror.MIRROR || mirror == SettingsAndUtils.Mirror.BOTH) {
                 affProcess.addBaseProcess(targetDir0, miss, minPure, true, true);
             }
         }
-        if (runState == RunState.FIRST_NOTE_BEGIN || runState == RunState.BOTH) {
+        if (runState == SettingsAndUtils.RunState.FIRST_NOTE_BEGIN || runState == SettingsAndUtils.RunState.BOTH) {
             minPure = 0;
-            if (mirror == Mirror.ORIGIN || mirror == Mirror.BOTH) {
+            if (mirror == SettingsAndUtils.Mirror.ORIGIN || mirror == SettingsAndUtils.Mirror.BOTH) {
                 affProcess.addBaseProcess(targetDir0, miss, minPure, false, false);
             }
-            if (mirror == Mirror.MIRROR || mirror == Mirror.BOTH) {
+            if (mirror == SettingsAndUtils.Mirror.MIRROR || mirror == SettingsAndUtils.Mirror.BOTH) {
                 affProcess.addBaseProcess(targetDir0, miss, minPure, false, true);
             }
         }
@@ -371,7 +364,7 @@ public class AffToRecord {
 
     private void autoZip() {
         String version = null;
-        File apk = getApk();
+        File apk = SettingsAndUtils.getApk();
         if (apk != null) {
             String apkName = apk.getName();
             Matcher matcher = PATTERN.matcher(apkName);
@@ -382,7 +375,7 @@ public class AffToRecord {
         if (version == null) {
             version = new SimpleDateFormat("yyyyMMdd").format(new Date());
         }
-        File zipDir = new File(getVmsDir(), "脚本打包");
+        File zipDir = new File(SettingsAndUtils.getVmsDir(), "脚本打包");
         zipDir.mkdirs();
         for (File dir : zipDirList) {
             File targetZip = new File(zipDir, dir.getName() + "_" + version + ".zip");

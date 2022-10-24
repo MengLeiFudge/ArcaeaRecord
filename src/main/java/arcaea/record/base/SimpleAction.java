@@ -1,10 +1,9 @@
-package arcaea_record.convert.base;
+package arcaea.record.base;
 
+import arcaea.record.SettingsAndUtils;
 import lombok.Data;
 
 import java.io.Serializable;
-
-import static arcaea_record.SettingsAndUtils.MAX_TOUCH_NUM;
 
 /**
  * 该类表示脚本中的某个基础操作，即在指定时间、指定位置的按下【或】抬起操作.
@@ -37,7 +36,7 @@ public class SimpleAction implements Serializable, Comparable<SimpleAction> {
     }
 
     public boolean isArc() {
-        return id >= MAX_TOUCH_NUM;
+        return id >= SettingsAndUtils.MAX_TOUCH_NUM;
     }
 
     @Override

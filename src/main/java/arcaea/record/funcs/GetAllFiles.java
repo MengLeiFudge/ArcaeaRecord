@@ -1,4 +1,6 @@
-package arcaea_record.get;
+package arcaea.record.funcs;
+
+import arcaea.record.SettingsAndUtils;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -12,11 +14,7 @@ import java.util.Enumeration;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-import static arcaea_record.Main.sc;
-import static arcaea_record.SettingsAndUtils.getAffDir;
-import static arcaea_record.SettingsAndUtils.getApk;
-import static arcaea_record.SettingsAndUtils.getCharDir;
-import static arcaea_record.SettingsAndUtils.getDlDir;
+import static arcaea.record.Main.sc;
 
 /**
  * @author MengLeiFudge
@@ -51,7 +49,7 @@ public class GetAllFiles {
 
     private void init() {
         System.out.println("输入 dl 文件夹路径");
-        File defFile = getDlDir();
+        File defFile = SettingsAndUtils.getDlDir();
         System.out.println("回车表示 " + defFile);
         String s = sc.nextLine();
         dlDir = s.equals("") ? defFile : new File(s);
@@ -65,19 +63,19 @@ public class GetAllFiles {
         }
 
         System.out.println("输入 arc apk 路径");
-        defFile = getApk();
+        defFile = SettingsAndUtils.getApk();
         System.out.println("回车表示 " + defFile);
         s = sc.nextLine();
         apk = s.equals("") ? defFile : new File(s);
 
         System.out.println("输入目标官谱文件夹路径");
-        defFile = getAffDir();
+        defFile = SettingsAndUtils.getAffDir();
         System.out.println("回车表示 " + defFile);
         s = sc.nextLine();
         affDir = s.equals("") ? defFile : new File(s);
 
         System.out.println("输入目标搭档图片文件夹路径");
-        defFile = getCharDir();
+        defFile = SettingsAndUtils.getCharDir();
         System.out.println("回车表示 " + defFile);
         s = sc.nextLine();
         charDir = s.equals("") ? defFile : new File(s);

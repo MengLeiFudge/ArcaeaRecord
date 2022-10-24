@@ -1,13 +1,11 @@
-package arcaea_record.convert.base;
+package arcaea.record.base;
 
+import arcaea.record.SettingsAndUtils;
 import lombok.Data;
 
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
-
-import static arcaea_record.SettingsAndUtils.INTERVAL_TIME;
-import static arcaea_record.SettingsAndUtils.MAX_TOUCH_NUM;
 
 /**
  * 该类用于生成脚本时，为每个非蛇操作分配id.
@@ -21,7 +19,7 @@ public class TouchIdManager implements Serializable {
     private final List<ArrayList<TouchTime>> touchTimeLists = new ArrayList<>();
 
     public TouchIdManager() {
-        for (int i = 0; i < MAX_TOUCH_NUM; i++) {
+        for (int i = 0; i < SettingsAndUtils.MAX_TOUCH_NUM; i++) {
             touchTimeLists.add(new ArrayList<>());
         }
     }
@@ -72,7 +70,7 @@ public class TouchIdManager implements Serializable {
             return true;
         }
         // 开头能否添加
-        if (list.get(0).beginTime - endTime > INTERVAL_TIME) {
+        if (list.get(0).beginTime - endTime > SettingsAndUtils.INTERVAL_TIME) {
             list.add(0, new TouchTime(beginTime, endTime));
             return true;
         }
@@ -80,13 +78,13 @@ public class TouchIdManager implements Serializable {
         for (int i = 0; i < list.size() - 1; i++) {
             TouchTime t1 = list.get(i);
             TouchTime t2 = list.get(i + 1);
-            if (beginTime - t1.endTime > INTERVAL_TIME && t2.beginTime - endTime > INTERVAL_TIME) {
+            if (beginTime - t1.endTime > SettingsAndUtils.INTERVAL_TIME && t2.beginTime - endTime > SettingsAndUtils.INTERVAL_TIME) {
                 list.add(i + 1, new TouchTime(beginTime, endTime));
                 return true;
             }
         }
         // 结尾能否添加
-        if (beginTime - list.get(list.size() - 1).endTime > INTERVAL_TIME) {
+        if (beginTime - list.get(list.size() - 1).endTime > SettingsAndUtils.INTERVAL_TIME) {
             list.add(new TouchTime(beginTime, endTime));
             return true;
         }

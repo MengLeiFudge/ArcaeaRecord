@@ -1,6 +1,6 @@
-package arcaea_record;
+package arcaea.record;
 
-import arcaea_record.convert.base.SimpleAction;
+import arcaea.record.base.SimpleAction;
 
 import java.io.BufferedReader;
 import java.io.File;
