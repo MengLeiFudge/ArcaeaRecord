@@ -7,6 +7,9 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * @author MengLeiFudge
+ */
 public class TimingGroup implements Serializable {
     List<Timing> timingList = new ArrayList<>();
     List<Note> noteList = new ArrayList<>();

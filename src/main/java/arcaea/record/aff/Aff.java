@@ -58,17 +58,17 @@ public class Aff {
      */
     List<SceneControl> sceneControlList = new ArrayList<>();
 
-    private static final Pattern P_CLICK = Pattern.compile("\\([0-9]+,[0-5]\\)");
+    private static final Pattern P_CLICK = Pattern.compile("\\([0-9]+,[0-5]\\);");
 
-    private static final Pattern P_HOLD = Pattern.compile("hold\\([0-9]+,[0-9]+,[0-5]\\)");
+    private static final Pattern P_HOLD = Pattern.compile("hold\\([0-9]+,[0-9]+,[0-5]\\);");
 
     private static final Pattern P_ARC = Pattern.compile("arc\\([0-9]+,[0-9]+,-?[0-9.]+,-?[0-9.]+," +
-            "(b|s|si|so|sisi|siso|sosi|soso),-?[0-9.]+,-?[0-9.]+,[0-2],none,(true|false)\\)" +
-            "(\\[arctap\\([0-9]+\\)(,arctap\\([0-9]+\\))*])?");
+            "(b|s|si|so|sisi|siso|sosi|soso),-?[0-9.]+,-?[0-9.]+,[0-3],.+,(true|false)\\)" +
+            "(\\[arctap\\([0-9]+\\)(,arctap\\([0-9]+\\))*])?;");
 
-    private static final Pattern P_TIMING = Pattern.compile("timing\\([0-9]+,[0-9.]+,[0-9.]+\\)");
+    private static final Pattern P_TIMING = Pattern.compile("timing\\([0-9]+,[0-9.]+,[0-9.]+\\);");
 
-    private static final Pattern P_SCENE_CONTROL = Pattern.compile("scenecontrol\\([0-9]+,enwidencamera,[0-9.]+,[01]\\)");
+    private static final Pattern P_SCENE_CONTROL = Pattern.compile("scenecontrol\\([0-9]+,enwidencamera,[0-9.]+,[01]\\);");
 
     public Aff(File affFile) {
         this.affFile = affFile;
@@ -129,7 +129,6 @@ public class Aff {
                     tempTimingGroup = null;
                 } else {
                     // 非 timinggroup 语句
-                    Note note;
                     if (P_CLICK.matcher(line).matches()) {
                         Objects.requireNonNullElse(tempTimingGroup, baseTimingGroup).noteList.add(new Click(line));
                     } else if (P_HOLD.matcher(line).matches()) {
@@ -140,6 +139,8 @@ public class Aff {
                         Objects.requireNonNullElse(tempTimingGroup, baseTimingGroup).timingList.add(new Timing(line));
                     } else if (P_SCENE_CONTROL.matcher(line).matches()) {
                         sceneControlList.add(new SceneControl(line));
+                    } else {
+                        System.out.println("未识别：" + line);
                     }
                 }
             }
@@ -147,6 +148,5 @@ public class Aff {
             e.printStackTrace();
         }
     }
-
 
 }

@@ -1,4 +1,9 @@
 package arcaea.record.aff.note;
 
-public abstract class Note {
+import java.io.Serializable;
+
+/**
+ * @author MengLeiFudge
+ */
+public abstract class Note implements Serializable {
 }

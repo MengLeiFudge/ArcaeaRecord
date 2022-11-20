@@ -1,4 +1,9 @@
 package arcaea.record.aff.view;
 
-public abstract class View {
+import java.io.Serializable;
+
+/**
+ * @author MengLeiFudge
+ */
+public abstract class View implements Serializable {
 }
