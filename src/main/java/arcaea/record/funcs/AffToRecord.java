@@ -2,9 +2,9 @@ package arcaea.record.funcs;
 
 import arcaea.record.Main;
 import arcaea.record.SettingsAndUtils;
-import arcaea.record.base.MissAndMinPure;
 import arcaea.record.base.AffProcess;
 import arcaea.record.base.ConvertThreadPoolExecutor;
+import arcaea.record.base.MissAndMinPure;
 
 import java.io.File;
 import java.io.FileInputStream;

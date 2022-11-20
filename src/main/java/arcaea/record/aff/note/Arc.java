@@ -16,11 +16,10 @@ public class Arc extends Note implements Serializable {
     int t2;
     double x1;
     double x2;
-    int easing;
+    String easing;
     double y1;
     double y2;
     int color;
-    String hitsound;
     boolean skylineBoolean;
     List<Integer> tList = new ArrayList<>();
 
@@ -36,11 +35,11 @@ public class Arc extends Note implements Serializable {
         t2 = Integer.parseInt(data[1]);
         x1 = Double.parseDouble(data[2]);
         x2 = Double.parseDouble(data[3]);
-        easing = Integer.parseInt(data[4]);
+        easing = data[4];
         y1 = Double.parseDouble(data[5]);
         y2 = Double.parseDouble(data[6]);
         color = Integer.parseInt(data[7]);
-        hitsound = data[8];
+        // data[8] 是打击音效，无用
         if (!skylineBoolean) {
             // 不含天键情况下，可能为蛇可能为黑线；含天键情况下，必定为黑线
             skylineBoolean = Boolean.parseBoolean(data[9]);
@@ -48,7 +47,7 @@ public class Arc extends Note implements Serializable {
         }
         data = line.substring(line.indexOf(")[") + 2, line.length() - 2).split(",");
         for (var x : data) {
-            x = x.replaceAll("arctap\\(\\)", "");
+            x = x.replaceAll("arctap\\(|\\)", "");
             tList.add(Integer.parseInt(x));
         }
     }

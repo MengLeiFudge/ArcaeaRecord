@@ -1,8 +1,8 @@
 package arcaea.record.funcs;
 
 import arcaea.record.SettingsAndUtils;
-import arcaea.record.base.ConvertThreadPoolExecutor;
 import arcaea.record.base.AffProcess;
+import arcaea.record.base.ConvertThreadPoolExecutor;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;

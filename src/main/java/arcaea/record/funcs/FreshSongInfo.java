@@ -1,6 +1,5 @@
 package arcaea.record.funcs;
 
-import arcaea.record.Main;
 import arcaea.record.SettingsAndUtils;
 import arcaea.record.aff.Aff;
 

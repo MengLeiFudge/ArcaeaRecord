@@ -1,9 +1,6 @@
 package arcaea.record.base;
 
 import arcaea.record.SettingsAndUtils;
-import arcaea.record.base.ArcAction;
-import arcaea.record.base.SimpleAction;
-import arcaea.record.base.TouchIdManager;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.serializer.SerializerFeature;

@@ -3,12 +3,14 @@ package arcaea.record.aff;
 import arcaea.record.aff.note.Arc;
 import arcaea.record.aff.note.Click;
 import arcaea.record.aff.note.Hold;
-import arcaea.record.aff.note.Note;
 import arcaea.record.aff.timing.Timing;
 import arcaea.record.aff.view.SceneControl;
 import org.apache.commons.lang3.SerializationUtils;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;

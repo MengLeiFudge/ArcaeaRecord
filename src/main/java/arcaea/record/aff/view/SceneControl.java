@@ -19,7 +19,7 @@ public class SceneControl extends View implements Serializable {
     /**
      * 持续时间.
      */
-    int duration;
+    double duration;
 
     /**
      * 淡入或淡出该事件展示的效果（1/0），1表示变为6k、显示边轨.
@@ -33,7 +33,7 @@ public class SceneControl extends View implements Serializable {
         String[] data = line.substring("scenecontrol(".length(), line.length() - 2).split(",");
         t = Integer.parseInt(data[0]);
         // data[1] 是场景参数，此处仅处理 enwidencamera
-        duration = Integer.parseInt(data[2]);
+        duration = Double.parseDouble(data[2]);
         to6k = Integer.parseInt(data[3]) == 1;
     }
 }
