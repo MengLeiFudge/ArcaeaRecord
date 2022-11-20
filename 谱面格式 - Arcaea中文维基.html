@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<!-- saved from url=(0059)https://wiki.arcaea.cn/%E8%B0%B1%E9%9D%A2%E6%A0%BC%E5%BC%8F -->
+<html class="client-js vector-animations-ready ve-available" lang="zh-Hans-CN" dir="ltr">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+    <ul>
+        <li><b>警告，这里只是谱面格式的介绍帖，自制谱一切后果自负！</b></li>
+    </ul>
+    <ul>
+        <li><b>由于lowiro明确讲过禁止传播官方以外的版本，所以本页面将保持孤立状态，严禁链入/引用!</b></li>
+    </ul>
+    <div id="toc" class="toc" role="navigation" aria-labelledby="mw-toc-heading"><input type="checkbox" role="button"
+                                                                                        id="toctogglecheckbox"
+                                                                                        class="toctogglecheckbox"
+                                                                                        style="display:none">
+        <div class="toctitle" lang="zh-Hans-CN" dir="ltr"><h2 id="mw-toc-heading">目录</h2><span
+                class="toctogglespan"><label class="toctogglelabel" for="toctogglecheckbox"></label></span></div>
+        <ul>
+            <li class="toclevel-1 tocsection-1"><span class="tocnumber">1</span> <span class="toctext">总论</span></li>
+            <li class="toclevel-1 tocsection-2"><span class="tocnumber">2</span> <span class="toctext">解析</span>
+                <ul>
+                    <li class="toclevel-2 tocsection-3"><span class="tocnumber">2.1</span> <span
+                            class="toctext">文件头</span></li>
+                    <li class="toclevel-2 tocsection-4"><span class="tocnumber">2.2</span> <span
+                            class="toctext">Timing</span></li>
+                    <li class="toclevel-2 tocsection-5"><span class="tocnumber">2.3</span> <span class="toctext">地面Note &amp; 地面Hold</span>
+                    </li>
+                    <li class="toclevel-2 tocsection-6"><span class="tocnumber">2.4</span> <span class="toctext">Arc &amp; 天空Note（Arctap）</span>
+                    </li>
+                    <li class="toclevel-2 tocsection-7"><span class="tocnumber">2.5</span> <span
+                            class="toctext">Camera</span></li>
+                    <li class="toclevel-2 tocsection-8"><span class="tocnumber">2.6</span> <span class="toctext">Scenecontrol</span>
+                    </li>
+                    <li class="toclevel-2 tocsection-9"><span class="tocnumber">2.7</span> <span class="toctext">Timinggroup</span>
+                    </li>
+                    <li class="toclevel-2 tocsection-10"><span class="tocnumber">2.8</span> <span
+                            class="toctext">Flick</span></li>
+                    <li class="toclevel-2 tocsection-11"><span class="tocnumber">2.9</span> <span
+                            class="toctext">综合</span></li>
+                </ul>
+            </li>
+            <li class="toclevel-1 tocsection-12"><span class="tocnumber">3</span> <span class="toctext">物量计算</span>
+            </li>
+        </ul>
+    </div>
+
+    <h2><span id=".E6.80.BB.E8.AE.BA"></span><span class="mw-headline" id="总论">总论</span></h2>
+    <p>谱面的后缀名为aff，所有在安装包中的官方谱面（即Arcaea曲包中的曲目的PST/PRS/FTR难度和愚人节版本中的愚人节谱面）没有加密，可以直接阅读
+    </p>
+    <p>谱面所在位置为(Android apk)/assets/songs/&lt;曲目id&gt; 或 (iOS ipa)/Payload/Arc-mobile.app/songs/&lt;曲目id&gt;里，其中0，1，2，3分别对应PST，PRS，FTR，BYD。<s>其他的是什么东西自己打开便知道了</s>
+    </p>
+    <p>理论上更改aff文件以及对应音源后重新正确封包即可游玩
+    </p>
+    <p>在该文件里并没有曲名、难度等级、谱师之类的歌曲信息，请移步歌曲信息(songlist)格式
+    </p>
+    <p>关于解歌条件的部分，请移步解锁条件(unlocks)格式
+    </p>
+    <p>关于曲包相关内容，请移步曲包信息(packlist)格式
+    </p>
+    <h2><span id=".E8.A7.A3.E6.9E.90"></span><span class="mw-headline" id="解析">解析</span></h2>
+    <h3><span id=".E6.96.87.E4.BB.B6.E5.A4.B4"></span><span class="mw-headline" id="文件头">文件头</span></h3>
+    <p>所有谱面文件开始部分都一定包含以下两行：
+    </p>
+    <pre>AudioOffset:x
+-
+</pre>
+    <p>第一行代码表示谱面整体向前(-)/向后(+)移动x毫秒
+        <br>一般情况下x=0，这样物件对应的毫秒数即为歌曲播放进度的毫秒数
+        <br><b>但是如果x≠0，物件在音乐中实际对应的毫秒数=物件时间+x</b>
+        <br><i>鉴于有些音源以开头为基准的第一个采音不在整拍上，所以可能有时候的确需要x≠0</i>
+    </p>
+    <p>有些谱面会在AudioOffset行下方加入一行TimingPointDensityFactor：
+    </p>
+    <pre>AudioOffset:x
+TimingPointDensityFactor:y
+-
+</pre>
+    <p>这行代码表示音弧和长条的物量密度调整为正常值的y倍
+        <br>y=1时效果与省略此行相同
+        <br><s>如果y的值特别大的话...</s>
+    </p>
+    <p><i>注：在"-"所在的行之前，你可以参照以上两行的格式写自己的“标注”</i>
+        <br><i>例如“ChartVersion:2”，游戏会正常读取并记录相关数据，但是并不会有任何效果；物件的读取从"-"所在的行之后开始</i>
+    </p>
+    <h3><span class="mw-headline" id="Timing">Timing</span></h3>
+    <p>Timing代码如下
+    </p>
+    <pre>timing(t,bpm,beats);
+</pre>
+    <ul>
+        <li><b>t</b>(ms)：Timing起始位置，数字为整数</li>
+        <li><b>bpm</b>(拍/分钟)：节奏速度，数字为不可省略小数点后两位的一个数</li>
+        <li><b>beats</b>(四分音个数(拍))：表示每多少个四分音符(拍)为一小节（出现一条小节线），数字为不可省略小数点后两位的一个数，比如4.00就是4/4拍，代表四拍一小节
+            <ul>
+                <li><b>需要注意的是每个谱面一定要有一个t=0的Timing！而且其bpm数值不可为负数！</b></li>
+            </ul>
+        </li>
+    </ul>
+    <h3><span id=".E5.9C.B0.E9.9D.A2Note_.26_.E5.9C.B0.E9.9D.A2Hold"></span><span class="mw-headline"
+                                                                                  id="地面Note_&amp;_地面Hold">地面Note &amp; 地面Hold</span>
+    </h3>
+    <p>地面Note &amp; 地面Hold代码如下
+    </p>
+    <pre>(t,lane);
+hold(t1,t2,lane);
+</pre>
+    <ul>
+        <li><b>t</b>(ms):地面Note所在时间，数字为整数</li>
+        <li><b>t1,t2</b>(ms):地面Hold物件开始/结束的时间，数字为整数，<b>t1＜t2</b></li>
+        <li><b>lane</b>(0～5):物件所在轨道，一般情况下轨道的编号从左到右依次为1，2，3，4，绝大部分情况下也只需要用到1~4轨道
+            <ul>
+                <li>
+                    4.0.0版本起新增“enwidenlane”的scenecontrol类型（见下文Scenecontrol），在标记为启用后，轨道由4条扩充至6条，在1轨左侧新增0轨，在4轨右侧新增5轨；在不在谱面文件内标记开启“enwidenlane”的情况下，游戏依然会正常摆放相应物件<s>（但是你打不到）</s>
+                </li>
+            </ul>
+        </li>
+    </ul>
+    <h3><span id="Arc_.26_.E5.A4.A9.E7.A9.BANote.EF.BC.88Arctap.EF.BC.89"></span><span class="mw-headline"
+                                                                                       id="Arc_&amp;_天空Note（Arctap）">Arc &amp; 天空Note（Arctap）</span>
+    </h3>
+    <p>Arc &amp; 天空Note（Arctap）代码如下
+    </p>
+    <pre>arc(t1,t2,x1,x2,easing,y1,y2,color,hitsound,skylineBoolean);
+</pre>
+    <ul>
+        <li><b>t1,t2</b>(ms)：Arc物件开始/结束的时间，数字为整数，<b>t1可以等于t2</b>，当t1=t2时，Arc与判定线平行，物量为0，且此种类型的Arc可以起到连接Arc组的作用（即宏观上算作不分立的Arc，不能换手）
+            <ul>
+                <li>只有skylineBoolean=true时t1可以大于t2</li>
+            </ul>
+        </li>
+        <li><b>x1,x2</b>：代表Arc物件开始/结束时的横坐标，<b>数字为不可省略小数点后两位的一个数</b></li>
+        <li><b>easing</b>(b,s,si,so)：Arc滑动方式。b=Both=Sine in &amp; out，s=straight，si=Sine in，so=Sine out。<b>当t1=t2时该参数无意义（都是直的）</b>
+            <ul>
+                <li>si与so可以两个在一起自由组合(如siso,sisi等)，siso代表x方向上滑动方式为si、y方向上滑动方式为so</li>
+            </ul>
+        </li>
+        <li><b>y1,y2</b>：代表Arc物件开始/结束时的纵坐标，<b>数字为不可省略小数点后两位的一个数</b></li>
+        <li><b>color</b>：Arc颜色，0蓝，1红，2绿，<b>在skylineBoolean=true时该参数无意义，且能被游戏正常读取</b> <i>（很多官方谱面中出现color=3的黑线推测是为方便谱师写黑线时做标记用）</i>
+            <ul>
+                <li>只有愚人节版本（v2.0.2、v2.6.1、v3.5.3、v3.12.6）可以正常读取绿Arc，其他版本不能正常读取绿Arc</li>
+            </ul>
+        </li>
+        <li><b>hitsound</b>：v4.0.0实装，给予Arctap特殊打击音效，<b>对整条黑线上所有的Arctap生效，</b>将它们替换为特殊样式，并应用特殊打击音效。举例：填写glass_wav时，将把/(songid)/glass.wav作为打击音效，填写“none”代表不应用特殊音效，无arctap或skylineBoolean=false时，该参数无意义（但是不能乱填，起码不能让游戏崩溃），等价于填写“none”
+        </li>
+        <li><b>skylineBoolean</b>(false,true)：判定这一段Arc是不是天空Note的判定线（黑线）。false为普通Arc，true为天空Note的判定线，但是只要有Arctap本参数就无意义（会将此Arc的类型强制转换为天空Note的判定线）
+            <ul>
+                <li>当skylineBoolean=true，并且该Arc上有天空Note（Arctap）时，代码如下</li>
+            </ul>
+        </li>
+    </ul>
+    <pre>arc(t1,t2,x1,x2,easing,y1,y2,color,hitsound,true)[arctap(tn1),arctap(tn2),……,arctap(tnm)];
+</pre>
+    <ul>
+        <li><b>tn1,tn2,……,tnm</b>(ms)：m个天空物件在这条判定线上的时间点，数字为整数，且不能超出t1和t2的区间</li>
+    </ul>
+    <h3><span class="mw-headline" id="Camera">Camera</span></h3>
+    <ul>
+        <li>于v1.6.1实装，代码如下：</li>
+    </ul>
+    <pre>camera(t,transverse,bottomzoom,linezoom,steadyangle,topzoom,angle,easing,lastingtime);
+</pre>
+    <ul>
+        <li><b>t</b>(ms)：camera开始时间</li>
+        <li><b>transverse</b>：轨道底部左右横向移动，正←负→.</li>
+        <li><b>bottomzoom</b>：轨道底部上下移动，正↓负↑</li>
+        <li><b>linezoom</b>：判定线前后移动，正远离负靠近</li>
+        <li><b>steadyangle</b>(°)：原地的摄像头视角转向，正逆时针负顺时针</li>
+        <li><b>topzoom</b>：轨道顶部的上下移动，正↓负↑</li>
+        <li><b>angle</b>(°)：底盘依照屏幕中心旋转，正逆时针负顺时针</li>
+        <li><b>easing</b>(qi,qo,l,reset,s)：camera移动方式，qi=Cubic in，qo=Cubic out，l=Linear，s=Sine in&amp;out</li>
+        <li><b>lastingtime</b>(ms)：本语句持续时间</li>
+    </ul>
+    <p>
+        <i>本功能在v1.7.0在代码中被标记关闭，v1.8.0中相关代码被彻底删除，但在之后的愚人节版本（v2.0.2、v2.6.1、v3.5.3、v3.12.6）中被恢复</i>
+    </p>
+    <h3><span class="mw-headline" id="Scenecontrol">Scenecontrol</span></h3>
+    <p>于v2.6.1实装，代码如下：
+    </p>
+    <pre>scenecontrol(t,type,*param1(float),*param2(int));
+</pre>
+    <ul>
+        <li><b>t</b>(ms)：开始时间</li>
+        <li><b>type</b>：要执行的场景控制类型</li>
+        <li><b>param</b>：参数，“*”代表可选，但是两个参数同时出现/不出现</li>
+    </ul>
+    <p>目前已知可填写的type及其参数情况如下：
+    </p>
+    <dl>
+        <dd>
+            <ul>
+                <li>trackhide：隐藏轨道</li>
+                <li>trackshow：显示轨道
+                    <ul>
+                        <li>不填参数</li>
+                        <li>使用例：<i>scenecontrol(10240,trackhide);</i></li>
+                    </ul>
+                </li>
+                <li>trackdisplay：轨道透明度控制
+                    <ul>
+                        <li><i>（注意：此type并未在任何官方谱面中使用过，但是包含此type的sc语句可以正常被Arcaea本体读取并正确执行，<b>请谨慎使用</b>
+                        </i>（<s>高效率程序员看不惯单单是轨道显示/隐藏就写了两个type，于是造了个轮子（结果惨遭忽视））</s>）
+                        </li>
+                        <li>
+                            param1：轨道从当前alpha变换到目标alpha(param2)所要花费的时间，数字为不可省略小数点后两位的一个数，单位为秒，填0.00等价于填1.00
+                        </li>
+                        <li>param2：轨道需要变换到的目标alpha值，可以填非负整数；&lt;255时有黑色背景特效，否则没有；=0为轨道完全透明，=255为轨道不透明，&gt;=256时透明度对256取余数计算。</li>
+                        <li>使用例：<i>scenecontrol(20480,trackdisplay,6.00,0);</i></li>
+                    </ul>
+                </li>
+                <li>redline（v3.0.0新增）：Arcahv解锁演出时的背景红线效果
+                    <ul>
+                        <li>param1：红线存在的时间，数字为不可省略小数点后两位的一个数，单位为秒</li>
+                        <li>param2：未知参数</li>
+                        <li>使用例：<i>scenecontrol(40960,redline,1.88,0);</i></li>
+                    </ul>
+                </li>
+            </ul>
+        </dd>
+    </dl>
+    <dl>
+        <dd>
+            <ul>
+                <li>arcahvdistort（v3.0.0新增）：Arcahv解锁演出时的背景变形效果</li>
+                <li>arcahvdebris（v3.0.0新增）：Arcahv解锁演出时的背景碎片效果
+                    <ul>
+                        <li>param1：从当前alpha变换为指定alpha的持续时间，数字为不可省略小数点后两位的一个数，单位为秒</li>
+                        <li>param2：目标alpha值</li>
+                        <li>使用例：<i>scenecontrol(1000,arcahvderis,1.00,128);</i></li>
+                    </ul>
+                </li>
+                <li>hidegroup（v3.5.3新增）：是否隐藏该时间组(timinggroup)内的note(由param2决定)
+                    <ul>
+                        <li>param1：未知参数</li>
+                        <li>param2：隐藏或显示该时间组的note（1/0）</li>
+                        <li>使用例：<i>scenecontrol(81920,hidegroup,0.00,1);</i></li>
+                        <li>需要放在时间组(timinggroup)中使用</li>
+                    </ul>
+                </li>
+            </ul>
+        </dd>
+    </dl>
+    <dl>
+        <dd>
+            <ul>
+                <li>enwidencamera（v4.0.0新增）：使Camera按一定比例远离轨道，同时skyinput也会变高</li>
+                <li>enwidenlanes（v4.0.0新增）：使轨道两侧的ExtraLane展示</li>
+                <li>两种enwiden类型的scenecontrol的param用法如下:
+                    <ul>
+                        <li>param1：持续时长（ms）</li>
+                        <li>param2：淡入或淡出该事件展示的效果（1/0）</li>
+                        <li>使用例：<i>scenecontrol(1000,enwidencamera,1000.00,1);</i>
+                            <ul>
+                                <li>
+                                    enwidencamera的相机移动效果实际相当于camera(t,0,450,450,0,0,0,s,duration);语句，但enwidencamera会同时将Sky
+                                    Input线移动至y=1.61处。
+                                </li>
+                            </ul>
+                        </li>
+                    </ul>
+                </li>
+            </ul>
+        </dd>
+    </dl>
+    <h3><span class="mw-headline" id="Timinggroup">Timinggroup</span></h3>
+    <p>于v3.0.0实装，代码如下：
+    </p>
+    <pre>timinggroup(){
+ //正常aff语句
+};
+</pre>
+    <ul>
+        <li>每一个timinggroup语句块中的语句（物件）使用其内部单独的timing语句<b>（并且至少包含一个timing语句）</b>，因此可以实现同时刻不同note流速
+        </li>
+        <li>timinggroup语句块中的timing语句不会产生小节线，小节线是由所有timinggroup语句块外面的timing语句决定的</li>
+        <li>一张谱面理论可以存在无限多个timinggroup语句块，也可以仅由t=0的timing和无数timinggroup组成</li>
+    </ul>
+    <p>可以通过在括号内添加标识来达到特殊效果，不填则不使用任何特殊效果。不同特殊效果之间可以叠加，用下划线隔开即可，如timinggroup(noinput_anglex200)。<br>
+        目前已有特殊效果标识有：
+    </p>
+    <ul>
+        <li>noinput（v3.5.3新增）：
+            <ul>
+                <li>此时本timinggroup内的物件只有显示效果，没有打击效果和物量，不会判定为击中</li>
+                <li>noinput中的实体Arc和hold在经过判定线后依然会消失而不会直接穿过（v3.12.6起）</li>
+                <li>noinput中的实体Arc保留了部分判定，因此依然可以实现一些正常的判定特性，如当异色Arc相交时，可以用任意一只手去接/换手
+                    <ul>
+                        <li>v3.12.6的愚人节曲目 Mistempered Malignance
+                            中的同色Arc段便是利用这个特性实现的，原理是在其中一条同色Arc上放了一条完全重叠的异色noinput隐藏Arc
+                        </li>
+                    </ul>
+                </li>
+            </ul>
+        </li>
+        <li>fadingholds（v3.12.2新增）：
+            <ul>
+                <li>此时在未击中Hold时，Hold会进行alpha渐变效果，直到变成未击中时的alpha</li>
+                <li>此效果仅对timinggroup中的Hold生效，其他物件不受影响</li>
+                <li>与noinput叠加时会正常触发fadingholds效果（但是你仍然无法击中hold）</li>
+            </ul>
+        </li>
+        <li>anglex/angley（v3.12.6新增）：
+            <ul>
+                <li>分别表示对timinggroup内的天键的轨迹进行旋转，旋转轴为经过天键在判定平面落点的平行于x/y轴的直线，其后需要接一个非负整数参数，表示旋转角（单位：度）的10倍
+                    <ul>
+                        <li>实际落点和判定位置不受影响</li>
+                        <li>此特殊效果仅影响天键，不影响地面tap/实体Arc/黑线</li>
+                    </ul>
+                </li>
+                <li>x轴旋转时正方向为上转，y轴旋转时正方向为向左转</li>
+                <li>两者可以叠加，叠加时先绕x轴平行线转再绕y轴平行线转，不受参数顺序影响
+                    <ul>
+                        <li>
+                            例：timinggroup(angley3400_anglex200)则会将所有天键的轨迹绕其对应的x轴平行线向上旋转20°然后绕其对应的y轴平行线向右旋转20°
+                        </li>
+                    </ul>
+                </li>
+            </ul>
+        </li>
+    </ul>
+    <h3><span class="mw-headline" id="Flick">Flick</span></h3>
+    <p>代码如下：
+    </p>
+    <pre>flick(t,x,y,vx,vy);
+</pre>
+    <ul>
+        <li><b>t</b>(ms):Flick所在时间</li>
+        <li><b>x,y</b>:Flick初始位置的横、纵坐标，<b>数字为不可省略小数点后两位的一个数</b></li>
+        <li><b>vx,vy</b>:Flick滑动方向向量的横向、纵向值，<b>数字为不可省略小数点后两位的一个数</b>，实际滑动方位角为正右方基础上逆时针arctan(vy/vx)
+        </li>
+        <li><b>官方谱面目前还没有实装过Flick，请谨慎使用Flick</b></li>
+        <li>v3.5.3开始的版本删除了部分Flick代码，因此这些版本不能正常读取flick</li>
+    </ul>
+    <h3><span id=".E7.BB.BC.E5.90.88"></span><span class="mw-headline" id="综合">综合</span></h3>
+    <ul>
+        <li>代码排列顺序<b>除了第一个t=0的Timing外</b>不受限制。</li>
+        <li>
+            通常（无Camera）情况下，实体Arc的起始点和结束点、Arctap的坐标不应超出(-0.50,0.00)，(1.50,0.00)，(0.00,1.00)，(1.00,1.00)四个点组成的梯形（Beyond难度中后两个点改为(-0.25,1.00)，(1.25,1.00))
+            <ul>
+                <li>
+                    存在enwidencamera的情况下，实体Arc的起始点和结束点、Arctap的坐标不应超出(-1.00,0.00)，(2.00,0.00)，(-0.25,1.61)，(1.25,1.61)四个点组成的梯形（Beyond难度中后两个点改为(-0.63,1.61)，(1.63,1.61))
+                </li>
+                <li>超出Beyond难度梯形范围可能会导致部分Arc或Arctap位于屏幕外</li>
+            </ul>
+        </li>
+        <li>当Arc类型为黑线时，其没有坐标界限（如 Dreamin' Attraction!! FTR的长方形隧道、Fracture Ray
+            FTR的开头倒数），但一般来说为了美观都会将其放置在上述的梯形区间内
+            <ul>
+                <li>但其搭载的Arctap仍需位于坐标界限内</li>
+            </ul>
+        </li>
+        <li>Tempestissimo
+            的BYD谱面中间的四押的部分Arc的y坐标达到了1.01，以此达成了整条音弧在上下剧烈颤动以及高架桥的视觉效果
+        </li>
+    </ul>
+    <h2><span id=".E7.89.A9.E9.87.8F.E8.AE.A1.E7.AE.97"></span><span class="mw-headline" id="物量计算">物量计算</span>
+    </h2>
+    <p>有的时候我们并不能玩到自制谱面，这个时候我们可以通过以下方式计算本谱物量：
+    </p>
+    <ul>
+        <li>统计所有地面note和arctap数量，每统计一个+1</li>
+        <li>Hold物件逐个计算，每个hold被起始位置所在BPM的1/2拍（即8分音符，或(30000/BPM)毫秒）分成一个一个判定块，<b>每个判定块开始处物量+1</b>，每个Hold最后一个判定块不加物量
+            <ul>
+                <li>BPM＞=255时，判定块间隔变为所在BPM的1拍（即4分音符，或(60000/BPM)毫秒）</li>
+                <li>BPM=0时，<b>本物件不存在</b>，更无从谈及物量</li>
+                <li>BPM＜0时，按BPM的绝对值进行计算</li>
+                <li>当Hold长度短于本来的判定块长度时，整个物件对半分为两个判定块，最后一个判定块同样不计入物量</li>
+                <li>当Hold跨越timing时，按Hold起始点的BPM进行计算</li>
+                <li>当存在TimingPointDensityFactor时，每个判定块的时间需要除以TimingPointDensityFactor的值</li>
+            </ul>
+        </li>
+        <li>Arc物件基本与Hold相同，<b>注意每个arc语句单算</b>
+            <ul>
+                <li>持续时长为0的arc物量为0</li>
+                <li>skylineBoolean为true时物量为0</li>
+                <li>Arc可以连接形成Arc组，此时头Arc按照Hold方式计算，其它Arc物量+1（存疑）
+                    <ul>
+                        <li>
+                            连接条件：与Arc颜色无关，要求前一个Arc结尾和后一个Arc开头x坐标差小于0.1，y坐标相等，时间差小于10
+                        </li>
+                        <li>即使不在同一timinggroup内也可以连成Arc组（具有noinput参数也可以）</li>
+                    </ul>
+                </li>
+            </ul>
+        </li>
+    </ul>
+    <p>
+        <i>需要指出，Hold和Arc可能会出现误差，原因在于末尾处可能刚好超过计数点零点几毫秒，不过即使如此正常情况下误差总计也不会太大</i>
+    </p>
+    <p><b>还是一句老话，编完请你自己high，不要大规模传播!!</b>
+    </p>
+</head>

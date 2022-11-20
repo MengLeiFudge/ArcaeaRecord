@@ -1,6 +1,8 @@
 package arcaea.record.funcs;
 
 import arcaea.record.Main;
+import arcaea.record.SettingsAndUtils;
+import arcaea.record.aff.Aff;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -10,11 +12,25 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 
+import static arcaea.record.Main.sc;
+
 /**
  * @author MengLeiFudge
  */
 public class FreshSongInfo {
     public void process() {
+        System.out.println("输入官谱文件夹路径");
+        File defFile = SettingsAndUtils.getAffDir();
+        System.out.println("回车表示 " + defFile);
+        String inputStr = sc.nextLine();
+        File affDir = inputStr.equals("") ? defFile : new File(inputStr);
+
+        File songListInAffDir = new File(affDir, "songlist");
+        File songListInProject = new File("songlist.json");
+
+        Aff aff = new Aff(new File("C:\\机台源码勿动\\MLJ\\arc\\官谱\\dl_testify\\3.aff"));
+
+
         System.out.println("开始处理谱面信息文件...");
         File oldFile = new File("songInfo.csv");
         File newFile = new File("newSongInfo.csv");
@@ -72,7 +88,7 @@ public class FreshSongInfo {
         newFile.renameTo(oldFile);
         System.out.println("已将 " + list.size() + " 条信息排序完毕！");
         System.out.println("回车继续...");
-        Main.sc.nextLine();
+        sc.nextLine();
         System.out.println();
     }
 }

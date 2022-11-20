@@ -98,7 +98,7 @@ public class ConvertThreadPoolExecutor implements Runnable {
                 Record baseRecord = new Record(affProcess.getResolution());
                 baseRecord.getNoteInfo(affProcess.getAffFile());
                 for (BaseProcess bp : affProcess.getBaseProcessList()) {
-                    Record r = (Record) SerializationUtils.clone(baseRecord);
+                    Record r = SerializationUtils.clone(baseRecord);
                     r.setTime(bp.isSongStartBegin());
                     r.optimize(affProcess.getAffFile().getPath(), bp.getMiss(), bp.getMinPure());
                     r.save(bp.getTargetDir(), affProcess.getSong(), affProcess.getDifficultyStr(),

@@ -6,6 +6,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -324,4 +325,7 @@ public class SettingsAndUtils {
      * 地键/天键点击时间.
      */
     public static final int CLICK_TIME = 100;
+
+
+    static SimpleDateFormat sdf = new SimpleDateFormat("MMdd_HHmmss");
 }
