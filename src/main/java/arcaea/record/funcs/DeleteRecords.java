@@ -25,9 +25,9 @@ public class DeleteRecords {
 
     private void init() {
         System.out.println("输入要删除脚本的文件夹路径");
-        File defFile = SettingsAndUtils.getAffDir();
+        File defFile = SettingsAndUtils.AFF_DIR;
         System.out.println("1表示 " + defFile);
-        System.out.println("2表示 " + SettingsAndUtils.getVmsDir());
+        System.out.println("2表示 " + SettingsAndUtils.VMS_DIR);
         System.out.println("回车表示1，输入其他表示指定目录");
         String s = sc.nextLine();
         switch (s) {
@@ -36,7 +36,7 @@ public class DeleteRecords {
                 destDir = defFile;
                 break;
             case "2":
-                destDir = SettingsAndUtils.getVmsDir();
+                destDir = SettingsAndUtils.VMS_DIR;
                 break;
             default:
                 destDir = new File(s);

@@ -1,23 +1,12 @@
 package arcaea.record.base;
 
 import arcaea.record.SettingsAndUtils;
-import com.alibaba.fastjson.JSONArray;
-import com.alibaba.fastjson.JSONObject;
-import com.alibaba.fastjson.serializer.SerializerFeature;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONWriter;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Random;
+import java.io.*;
+import java.util.*;
 
 /**
  * 谱面数据结构.
@@ -831,7 +820,7 @@ public class Record implements Serializable {
         JSONObject obj = new JSONObject();
         obj.put("operations", operationsArray);
         obj.put("recordInfo", recordInfo);
-        String formatStr = obj.toString(SerializerFeature.PrettyFormat);// 80%时间
+        String formatStr = obj.toString(JSONWriter.Feature.PrettyFormat);// 80%时间
         targetDir.mkdirs();
         File recordFile = new File(targetDir, song + "_" + s + ".record");
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(recordFile))) {

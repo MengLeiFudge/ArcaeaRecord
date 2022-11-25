@@ -3,12 +3,7 @@ package arcaea.record.funcs;
 import arcaea.record.SettingsAndUtils;
 import arcaea.record.aff.Aff;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
 import java.util.ArrayList;
 
 import static arcaea.record.Main.sc;
@@ -19,7 +14,7 @@ import static arcaea.record.Main.sc;
 public class FreshSongInfo {
     public void process() {
         System.out.println("输入官谱文件夹路径");
-        File defFile = SettingsAndUtils.getAffDir();
+        File defFile = SettingsAndUtils.AFF_DIR;
         System.out.println("回车表示 " + defFile);
         String inputStr = sc.nextLine();
         File affDir = inputStr.equals("") ? defFile : new File(inputStr);

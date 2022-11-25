@@ -2,6 +2,7 @@ package arcaea.record.funcs;
 
 import arcaea.record.Main;
 import arcaea.record.SettingsAndUtils;
+import arcaea.record.aff.Aff;
 import arcaea.record.base.AffProcess;
 import arcaea.record.base.ConvertThreadPoolExecutor;
 import arcaea.record.base.MissAndMinPure;
@@ -11,15 +12,13 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Locale;
-import java.util.Objects;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+
+import static arcaea.record.SettingsAndUtils.getTitleLocalizedEN;
 
 /**
  * 谱面文件转脚本的入口.
@@ -46,7 +45,7 @@ public class AffToRecord {
     private final List<File> zipDirList = new ArrayList<>();
 
     public void process() {
-        System.out.println("使用一键生成脚本（谱面目录使用 " + SettingsAndUtils.getAffDir() + "）？");
+        System.out.println("使用一键生成脚本（谱面目录使用 " + SettingsAndUtils.AFF_DIR + "）？");
         System.out.println("注：包含ftr+byd 0L2%、1L6%、991w8%、982w10% 原版+镜像，以及全难度理论值原版");
         System.out.println("回车表示一键生成脚本");
         System.out.println("输入其他内容表示自定义生成脚本");
@@ -84,14 +83,14 @@ public class AffToRecord {
      * 使用默认值生成通常需要的全部脚本.
      */
     private void auto() {
-        affDir = SettingsAndUtils.getAffDir();
+        affDir = SettingsAndUtils.AFF_DIR;
         minDifficulty = 2;
         maxDifficulty = 3;
         runState = SettingsAndUtils.RunState.SONG_START_BEGIN;
         mirror = SettingsAndUtils.Mirror.BOTH;
         resolution = SettingsAndUtils.Resolution.R1280_720;
 
-        targetDir = new File(SettingsAndUtils.getVmsDir(), "脚本/0L2%");
+        targetDir = new File(SettingsAndUtils.VMS_DIR, "脚本/0L2%");
         try {
             targetDir = targetDir.getCanonicalFile();
         } catch (IOException e) {
@@ -101,7 +100,7 @@ public class AffToRecord {
         zipDirList.add(targetDir);
         getProcessList(affDir);
 
-        targetDir = new File(SettingsAndUtils.getVmsDir(), "脚本/1L6%");
+        targetDir = new File(SettingsAndUtils.VMS_DIR, "脚本/1L6%");
         try {
             targetDir = targetDir.getCanonicalFile();
         } catch (IOException e) {
@@ -111,7 +110,7 @@ public class AffToRecord {
         zipDirList.add(targetDir);
         getProcessList(affDir);
 
-        targetDir = new File(SettingsAndUtils.getVmsDir(), "脚本/991w8%");
+        targetDir = new File(SettingsAndUtils.VMS_DIR, "脚本/991w8%");
         try {
             targetDir = targetDir.getCanonicalFile();
         } catch (IOException e) {
@@ -121,7 +120,7 @@ public class AffToRecord {
         zipDirList.add(targetDir);
         getProcessList(affDir);
 
-        targetDir = new File(SettingsAndUtils.getVmsDir(), "脚本/982w10%");
+        targetDir = new File(SettingsAndUtils.VMS_DIR, "脚本/982w10%");
         try {
             targetDir = targetDir.getCanonicalFile();
         } catch (IOException e) {
@@ -131,7 +130,7 @@ public class AffToRecord {
         zipDirList.add(targetDir);
         getProcessList(affDir);
 
-        targetDir = new File(SettingsAndUtils.getVmsDir(), "脚本/全难度理论值");
+        targetDir = new File(SettingsAndUtils.VMS_DIR, "脚本/全难度理论值");
         try {
             targetDir = targetDir.getCanonicalFile();
         } catch (IOException e) {
@@ -142,7 +141,7 @@ public class AffToRecord {
         missAndMinPure = new MissAndMinPure("0", "0");
         getProcessList(affDir);
 
-        targetDir = new File(SettingsAndUtils.getVmsDir(), "脚本/低难度理论值");
+        targetDir = new File(SettingsAndUtils.VMS_DIR, "脚本/低难度理论值");
         try {
             targetDir = targetDir.getCanonicalFile();
         } catch (IOException e) {
@@ -159,13 +158,13 @@ public class AffToRecord {
      */
     private void diy() {
         System.out.println("输入要转换的谱面文件夹路径");
-        File defFile = SettingsAndUtils.getAffDir();
+        File defFile = SettingsAndUtils.AFF_DIR;
         System.out.println("回车表示 " + defFile);
         String s = Main.sc.nextLine();
         affDir = s.equals("") ? defFile : new File(s);
 
         System.out.println("选择目标文件夹路径：");
-        defFile = new File(SettingsAndUtils.getVmsDir(), "operationRecords");
+        defFile = new File(SettingsAndUtils.VMS_DIR, "operationRecords");
         System.out.println("1.仅使用新路径，在 " + defFile + " 集中生成脚本");
         System.out.println("2.仅使用原始路径，在每个谱面所对应文件夹下分别生成脚本");
         System.out.println("还可以直接输入路径，此时仅使用输入的新路径");
@@ -296,34 +295,25 @@ public class AffToRecord {
             return;
         }
         String parentDirName = file.getParentFile().getName();
-        String song = parentDirName.toLowerCase(Locale.ROOT);
-        int note = 1000;
-        String[] info = SettingsAndUtils.getInfo(parentDirName);
-        boolean error = false;
-        if (info.length == 0) {
-            System.out.println(parentDirName + " 的信息不存在！");
-            error = true;
-        } else {
-            try {
-                // 雷电模拟器脚本按照先大写再小写排序，很不方便，这里全部改成小写
-                // Windows 文件名不能有 \/:*?"<>| 这些字符，将其全部替换为空格
-                song = info[1].toLowerCase(Locale.ROOT)
-                        .replaceAll("[:]", "：")
-                        .replaceAll("[?]", "？")
-                        .replaceAll("[\\\\/:*?\"<>|]", "");
-                note = Integer.parseInt(info[difficulty + 2]);
-            } catch (ArrayIndexOutOfBoundsException | NumberFormatException e) {
-                //e.printStackTrace();
-                System.out.println(parentDirName + " 的 " + fileName + " 信息部分缺失或格式错误！");
-                error = true;
-            }
+        int note = new Aff(file).getNote();
+        String sid = parentDirName.toLowerCase(Locale.ROOT);
+        if (sid.startsWith("dl_")) {
+            sid = sid.substring(3);
         }
-        if (error) {
-            System.out.println("是否使用 " + song + " 作为歌曲名，并使用 " + note + " 作为 note 数？");
-            System.out.println("回车表示使用上方信息并继续，其他表示不处理该谱面");
+        String songName = getTitleLocalizedEN(sid);
+        if (songName == null) {
+            System.out.println("未找到 " + sid + " 对应的歌曲名！");
+            System.out.println("回车表示使用 " + sid + " 作为歌曲名并继续，其他表示不处理该谱面");
             if (!"".equals(Main.sc.nextLine())) {
                 return;
             }
+        } else {
+            // 雷电模拟器脚本按照先大写再小写排序，很不方便，这里全部改成小写
+            // Windows 文件名不能有 \/:*?"<>| 这些字符，将其全部替换为空格
+            songName = songName.toLowerCase(Locale.ROOT)
+                    .replaceAll(":", "：")
+                    .replaceAll("\\?", "？")
+                    .replaceAll("[\\\\/:*?\"<>|]", "");
         }
         int miss = missAndMinPure.getMissNum(note);
         int minPure;
@@ -336,7 +326,7 @@ public class AffToRecord {
             }
         }
         if (affProcess == null) {
-            affProcess = new AffProcess(file, song, SettingsAndUtils.DIFFICULTY_STR[difficulty], resolution);
+            affProcess = new AffProcess(file, songName, SettingsAndUtils.DIFFICULTY_STR[difficulty], resolution);
             processList.add(affProcess);
         }
         File targetDir0 = targetDir == null ? affProcess.getAffFile().getParentFile() : targetDir;
@@ -375,7 +365,7 @@ public class AffToRecord {
         if (version == null) {
             version = new SimpleDateFormat("yyyyMMdd").format(new Date());
         }
-        File zipDir = new File(SettingsAndUtils.getVmsDir(), "脚本打包");
+        File zipDir = new File(SettingsAndUtils.VMS_DIR, "脚本打包");
         zipDir.mkdirs();
         for (File dir : zipDirList) {
             File targetZip = new File(zipDir, dir.getName() + "_" + version + ".zip");

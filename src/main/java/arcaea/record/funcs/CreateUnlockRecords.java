@@ -4,12 +4,7 @@ import arcaea.record.SettingsAndUtils;
 import arcaea.record.base.AffProcess;
 import arcaea.record.base.ConvertThreadPoolExecutor;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
 import java.util.ArrayList;
 
 import static arcaea.record.Main.sc;
@@ -40,7 +35,7 @@ public class CreateUnlockRecords {
 
     private boolean init() {
         System.out.println("输入 Tempestissimo 谱面所在的【文件夹】路径");
-        File defFile = new File(SettingsAndUtils.getAffDir(), "dl_tempestissimo");
+        File defFile = new File(SettingsAndUtils.AFF_DIR, "dl_tempestissimo");
         System.out.println("回车表示 " + defFile);
         String s = sc.nextLine();
         File affDir = s.equals("") ? defFile : new File(s);
@@ -52,7 +47,7 @@ public class CreateUnlockRecords {
             }
         }
         System.out.println("输入要生成脚本的文件夹路径");
-        defFile = new File(SettingsAndUtils.getVmsDir(), "tempestissimo解锁脚本");
+        defFile = new File(SettingsAndUtils.VMS_DIR, "tempestissimo解锁脚本");
         System.out.println("回车表示 " + defFile);
         s = sc.nextLine();
         recordDir = s.equals("") ? defFile : new File(s);

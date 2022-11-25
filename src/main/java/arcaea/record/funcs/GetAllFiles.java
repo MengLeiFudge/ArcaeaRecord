@@ -72,7 +72,7 @@ public class GetAllFiles {
         apk = s.equals("") ? defFile : new File(s);
 
         System.out.println("输入目标官谱文件夹路径");
-        defFile = SettingsAndUtils.getAffDir();
+        defFile = SettingsAndUtils.AFF_DIR;
         System.out.println("回车表示 " + defFile);
         s = sc.nextLine();
         affDir = s.equals("") ? defFile : new File(s);

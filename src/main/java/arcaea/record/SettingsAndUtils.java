@@ -1,19 +1,29 @@
 package arcaea.record;
 
 import arcaea.record.base.SimpleAction;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
+import org.apache.commons.io.FileUtils;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 
 /**
+ * 设定 arc 文件夹的位置，以及其他参数.
+ * <p>
+ * 在开始前，应按照如下步骤配置：
+ * <ul>
+ *     <li>修改 {@link #ARC_DIR} 至合适的目录</li>
+ *     <li>将最新的 arcaea 安装包（如 arcaea_4.1.0c.apk）放至 {@link #ARC_DIR} 内</li>
+ *     <li>用雷电模拟器下载全部的歌曲，并将 dl 文件夹移动至 Pictures 内</li>
+ *     <li>打开雷电模拟器脚本路径，将其复制到 {@link #VMS_DIR}</li>
+ *     <li>运行程序！enjoy it！</li>
+ * </ul>
+ *
  * @author MengLeiFudge
  */
 public class SettingsAndUtils {
@@ -21,19 +31,21 @@ public class SettingsAndUtils {
     }
 
     /**
-     * 返回谱面、音乐、曲绘文件夹.
+     * arc 文件存放的根目录.
      */
-    public static File getAffDir() {
-        return new File("D:/arc/官谱");
-    }
+    public static final File ARC_DIR = new File("D:/arc");
+    //public static final File ARC_DIR = new File("C:\\机台源码勿动\\MLJ\\arc");
 
     /**
-     * 返回名称开始为 arc，格式为 apk 的游戏安装包.
-     * <p>
-     * 多个 apk 满足条件时，返回名称排序最后一位（大概率为所有安装包中最新版本）。
+     * 官谱路径，以歌曲 sid 为文件夹存储谱面、音乐、曲绘等.
+     */
+    public static final File AFF_DIR = new File(ARC_DIR, "官谱");
+
+    /**
+     * arcaea 的 apk 安装包.
      */
     public static File getApk() {
-        File[] files = new File("D:/arc").listFiles();
+        File[] files = ARC_DIR.listFiles();
         if (files == null) {
             return null;
         }
@@ -44,52 +56,63 @@ public class SettingsAndUtils {
     }
 
     /**
-     * 返回从模拟器中复制出来的dl文件夹.
+     * 从模拟器中复制出来的 dl 文件夹.
      */
     public static File getDlDir() {
-        return new File("C:/Users/" + System.getProperty("user.name") +
-                "/Documents/leidian/Pictures/dl");
+        return new File("C:/Users/" + System.getProperty("user.name") + "/Documents/leidian/Pictures/dl");
     }
 
     /**
-     * 返回角色全身图、头像文件夹.
+     * 搭档全身图、头像文件夹.
      */
     public static File getCharDir() {
-        return new File("D:/arc/char");
+        return new File(ARC_DIR, "char");
     }
 
     /**
-     * 返回脚本文件夹所在的根目录.
+     * 脚本文件夹所在的根目录.
      */
-    public static File getVmsDir() {
-        return new File("F:/leidian/vms");
-    }
+    public static final File VMS_DIR = new File("F:/leidian/vms");
 
     /**
      * JVM 可用的最大 CPU 数量.
      */
     public static final int THREAD_NUM = Runtime.getRuntime().availableProcessors();
 
-    private static File getSongInfoCsv() {
-        return new File("songInfo.csv");
+    /**
+     * 项目目录的 songlist 文件.
+     */
+    public static final File SONG_LIST = new File("songlist.json");
+
+    /**
+     * 暂存 sid 与 歌曲英文名 的对应关系，提升读取速度.
+     */
+    private static final HashMap<String, String> SONG_MAP = new HashMap<>();
+
+    /**
+     * 根据输入的 sid，返回对应的歌曲英文名.
+     */
+    public static String getTitleLocalizedEN(String sid) {
+        if (!SONG_MAP.containsKey(sid)) {
+            SONG_MAP.clear();
+            try {
+                JSONObject obj = JSON.parseObject(FileUtils.readFileToString(SONG_LIST, StandardCharsets.UTF_8));
+                JSONArray songInfoArr = obj.getJSONArray("songs");
+                for (int i = 0; i < songInfoArr.size(); i++) {
+                    JSONObject songInfo = songInfoArr.getJSONObject(i);
+                    String songId = songInfo.getString("id");
+                    String songNameEN = songInfo.getJSONObject("title_localized").getString("en");
+                    SONG_MAP.put(songId, songNameEN);
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        return SONG_MAP.get(sid);
     }
+
 
     public static final String[] DIFFICULTY_STR = {"PST", "PRS", "FTR", "BYD"};
-
-    public static String[] getInfo(String srcSongName) {
-        try (BufferedReader br = new BufferedReader(new FileReader(getSongInfoCsv()))) {
-            String s;
-            while ((s = br.readLine()) != null) {
-                String[] data = s.split(",");
-                if (data.length > 0 && data[0].equals(srcSongName)) {
-                    return data;
-                }
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        return new String[0];
-    }
 
     /**
      * 分辨率，具有 16:9 和 4:3 两种比例的多个常用分辨率.
@@ -110,15 +133,23 @@ public class SettingsAndUtils {
         R1200_900(1200, 900),
         R1440_1080(1440, 1080);
 
-        private final String describe;
+        /**
+         * 模拟器的宽.
+         */
         private final int x;
+        /**
+         * 模拟器的高.
+         */
         private final int y;
-        private final double paramX1;
-        private final double paramX2;
-        private final double paramX3;
-        private final double paramX4;
-        private final double paramY1;
-        private final double paramY2;
+        /**
+         * 该分辨率的描述.
+         */
+        private final String describe;
+        /**
+         * 计算X坐标需要的参数.
+         */
+        private final double[] paramX;
+        private final double[] paramY;
         private final int pauseX;
         private final int pauseY;
         private final int continueX;
@@ -156,12 +187,8 @@ public class SettingsAndUtils {
             this.maxY = y * 15;
             if (Math.abs(x / 16.0 - y / 9.0) < 1e-5) {
                 describe = x + " * " + y + "（16:9）";
-                paramX1 = 0.091146;
-                paramX2 = 0.440104;
-                paramX3 = -0.045573;
-                paramX4 = 0.279948;
-                paramY1 = -0.388889;
-                paramY2 = 0.791667;
+                paramX = new double[]{0.091146, 0.440104, -0.045573, 0.279948};
+                paramY = new double[]{-0.388889, 0.791667};
                 pauseX = (int) (355.0 * ratio2);
                 pauseY = (int) (262.5 * ratio2);
                 continueX = (int) (1657.5 * ratio2);
@@ -176,12 +203,8 @@ public class SettingsAndUtils {
                 paramY1 = -644.0;
                 paramY2 = 1624.0;
                  */
-                paramX1 = 0.091146;
-                paramX2 = 0.440104;
-                paramX3 = -0.045573;
-                paramX4 = 0.279948;
-                paramY1 = -0.388889;
-                paramY2 = 0.791667;
+                paramX = new double[]{0.091146, 0.440104, -0.045573, 0.279948};
+                paramY = new double[]{-0.388889, 0.791667};
                 pauseX = (int) (280.0 * ratio2);
                 pauseY = (int) (156.0 * ratio2);
                 continueX = (int) (1332.0 * ratio2);
@@ -206,7 +229,8 @@ public class SettingsAndUtils {
          * @return 该点对应的脚本横坐标
          */
         public int convertToX(double x, double y) {
-            return (int) (((paramX1 * y + paramX2) * x + paramX3 * y + paramX4) * 15 * this.x);
+            //6k怎么处理？
+            return (int) (((paramX[0] * y + paramX[1]) * x + paramX[2] * y + paramX[3]) * 15 * this.x);
         }
 
         /**
@@ -219,7 +243,7 @@ public class SettingsAndUtils {
          * @return 该点对应的脚本纵坐标
          */
         public int convertToY(double y) {
-            return (int) ((paramY1 * y + paramY2) * 15 * this.y);
+            return (int) ((paramY[0] * y + paramY[1]) * 15 * this.y);
         }
 
         private final ArrayList<SimpleAction> preSimpleActions = new ArrayList<>();

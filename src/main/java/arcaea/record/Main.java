@@ -1,10 +1,6 @@
 package arcaea.record;
 
-import arcaea.record.funcs.AffToRecord;
-import arcaea.record.funcs.CreateUnlockRecords;
-import arcaea.record.funcs.DeleteRecords;
-import arcaea.record.funcs.FreshSongInfo;
-import arcaea.record.funcs.GetAllFiles;
+import arcaea.record.funcs.*;
 
 import java.util.Scanner;
 
@@ -44,6 +40,7 @@ public class Main {
                     System.out.println("喜欢本项目的话，请给萌泪点个star！");
                     return;
                 }
+                case "." -> new Test().process();
                 default -> {
                     System.out.println("输入有误！");
                     System.out.println();

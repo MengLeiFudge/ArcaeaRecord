@@ -5983,6 +5983,16 @@
           "chartDesigner": "N↓TRO",
           "jacketDesigner": "きらばがに",
           "rating": 8
+        },
+        {
+          "ratingClass": 3,
+          "chartDesigner": "TO4STER",
+          "jacketDesigner": "きらばがに",
+          "jacketOverride": true,
+          "rating": 9,
+          "ratingPlus": true,
+          "date": 1668038400,
+          "version": "4.1"
         }
       ]
     },
@@ -11621,7 +11631,7 @@
         }
       ]
     },
-	{
+    {
       "idx": 271,
       "id": "altair",
       "title_localized": {
@@ -11667,7 +11677,7 @@
       "id": "mukishitsu",
       "title_localized": {
         "en": "Redraw the Colorless World",
-		"ja": "無機質世界に彩を"
+        "ja": "無機質世界に彩を"
       },
       "artist": "MisomyL",
       "bpm": "155",
@@ -11880,7 +11890,7 @@
           "hidden_until": "none"
         }
       ],
-      "additional_files":[
+      "additional_files": [
         "video.mp4",
         "video_audio.ogg"
       ]
@@ -11890,7 +11900,7 @@
       "id": "worldender",
       "title_localized": {
         "en": "World Ender",
-		"ja": "魔王"
+        "ja": "魔王"
       },
       "artist": "sasakure.UK × TJ.hangneil",
       "bpm": "190-280",
@@ -11936,7 +11946,7 @@
           "hidden_until": "none"
         }
       ],
-      "additional_files":[
+      "additional_files": [
         "video.mp4",
         "video_audio.ogg"
       ]
@@ -11989,7 +11999,7 @@
           "hidden_until": "none"
         }
       ],
-      "additional_files":[
+      "additional_files": [
         "video.mp4",
         "video_audio.ogg"
       ]
@@ -12042,7 +12052,7 @@
           "hidden_until": "none"
         }
       ],
-      "additional_files":[
+      "additional_files": [
         "video.mp4",
         "video_audio.ogg"
       ]
@@ -12100,12 +12110,12 @@
           "hidden_until": "song"
         }
       ],
-      "additional_files":[
+      "additional_files": [
         "video.mp4",
         "video_audio.ogg"
       ]
     },
-	{
+    {
       "idx": 281,
       "id": "lovelessdress",
       "title_localized": {
@@ -12150,8 +12160,7 @@
           "hidden_until": "song"
         }
       ]
-    }
-    ,
+    },
     {
       "idx": 282,
       "id": "last",
@@ -12212,8 +12221,7 @@
           "hidden_until": "difficulty"
         }
       ]
-    }
-    ,
+    },
     {
       "idx": 283,
       "id": "lasteternity",
@@ -12270,8 +12278,7 @@
           "hidden_until": "difficulty"
         }
       ]
-    }
-    ,
+    },
     {
       "idx": 284,
       "id": "callimakarma",
@@ -12318,8 +12325,7 @@
           "hidden_until": "song"
         }
       ]
-    }
-	,
+    },
     {
       "idx": 285,
       "id": "kokoro",
@@ -12367,8 +12373,7 @@
           "rating": 9
         }
       ]
-    }
-	,
+    },
     {
       "idx": 286,
       "id": "aidrew",
@@ -12416,8 +12421,7 @@
           "ratingPlus": true
         }
       ]
-    }
-	,
+    },
     {
       "idx": 287,
       "id": "fluffyflash",
@@ -12465,8 +12469,7 @@
           "ratingPlus": true
         }
       ]
-    }
-	,
+    },
     {
       "idx": 288,
       "id": "goodbyemerry",
@@ -12513,8 +12516,7 @@
           "rating": 10
         }
       ]
-    }
-	,
+    },
     {
       "idx": 289,
       "id": "lamia",
@@ -12559,6 +12561,88 @@
           "jacketDesigner": "",
           "rating": 10,
           "ratingPlus": true
+        }
+      ]
+    },
+    {
+      "idx": 290,
+      "id": "freemyself",
+      "title_localized": {
+        "en": "Free Myself"
+      },
+      "artist": "lapix feat. mami",
+      "bpm": "153",
+      "bpm_base": 153,
+      "set": "single",
+      "purchase": "freemyself",
+      "audioPreview": 0,
+      "audioPreviewEnd": 0,
+      "side": 0,
+      "bg": "single2_light",
+      "bg_inverse": "single2_conflict",
+      "remote_dl": true,
+      "world_unlock": false,
+      "date": 1668038400,
+      "version": "4.1",
+      "difficulties": [
+        {
+          "ratingClass": 0,
+          "chartDesigner": "Exschwasion",
+          "jacketDesigner": "裕",
+          "rating": 4
+        },
+        {
+          "ratingClass": 1,
+          "chartDesigner": "Exschwasion",
+          "jacketDesigner": "裕",
+          "rating": 7
+        },
+        {
+          "ratingClass": 2,
+          "chartDesigner": "Exschwasion -unbound-",
+          "jacketDesigner": "裕",
+          "rating": 10
+        }
+      ]
+    },
+    {
+      "idx": 291,
+      "id": "cocorocosmetic",
+      "title_localized": {
+        "en": "cocoro*cosmetic"
+      },
+      "artist": "KOTONOHOUSE",
+      "bpm": "144",
+      "bpm_base": 144,
+      "set": "single",
+      "purchase": "cocorocosmetic",
+      "audioPreview": 0,
+      "audioPreviewEnd": 0,
+      "side": 0,
+      "bg": "single2_light",
+      "bg_inverse": "single2_conflict",
+      "remote_dl": true,
+      "world_unlock": false,
+      "date": 1668038400,
+      "version": "4.1",
+      "difficulties": [
+        {
+          "ratingClass": 0,
+          "chartDesigner": "Nitro",
+          "jacketDesigner": "wacca",
+          "rating": 3
+        },
+        {
+          "ratingClass": 1,
+          "chartDesigner": "Nitro",
+          "jacketDesigner": "wacca",
+          "rating": 6
+        },
+        {
+          "ratingClass": 2,
+          "chartDesigner": "Nitro",
+          "jacketDesigner": "wacca",
+          "rating": 9
         }
       ]
     }

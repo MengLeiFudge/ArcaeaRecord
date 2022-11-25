@@ -5,16 +5,14 @@ import arcaea.record.aff.note.Click;
 import arcaea.record.aff.note.Hold;
 import arcaea.record.aff.timing.Timing;
 import arcaea.record.aff.view.SceneControl;
+import lombok.Data;
 import org.apache.commons.lang3.SerializationUtils;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.regex.Pattern;
 
 /**
@@ -22,11 +20,12 @@ import java.util.regex.Pattern;
  *
  * @author MengLeiFudge
  */
+@Data
 public class Aff {
     /**
      * 谱面文件对象.
      */
-    File affFile;
+    private File affFile;
 
     /**
      * 音频偏移.
@@ -35,7 +34,7 @@ public class Aff {
      * <p>
      * 如果x≠0，物件在音乐中实际对应的毫秒数=物件时间+x。
      */
-    int audioOffset = 0;
+    private int audioOffset = 0;
 
     /**
      * 音符密度.
@@ -44,21 +43,21 @@ public class Aff {
      * <p>
      * y=1时效果与省略此行相同。
      */
-    double timingPointDensityFactor = 1;
+    private double timingPointDensityFactor = 1;
 
     /**
      * 按键组列表.
      * <p>
      * 任何谱子都可分为多个按键组，不在 timinggroup 内部的都认为在默认按键组。
      */
-    List<TimingGroup> timingGroupList = new ArrayList<>();
+    private List<TimingGroup> timingGroupList = new ArrayList<>();
 
     /**
      * 视觉列表.
      * <p>
      * 仅存储 4k/6k 变化的相关语句，即 enwidencamera。enwidenlanes 仅起显示作用，无需处理。
      */
-    List<SceneControl> sceneControlList = new ArrayList<>();
+    private List<SceneControl> sceneControlList = new ArrayList<>();
 
     private static final Pattern P_CLICK = Pattern.compile("\\([0-9]+,[0-5]\\);");
 
@@ -68,16 +67,19 @@ public class Aff {
             "(b|s|si|so|sisi|siso|sosi|soso),-?[0-9.]+,-?[0-9.]+,[0-3],.+,(true|false)\\)" +
             "(\\[arctap\\([0-9]+\\)(,arctap\\([0-9]+\\))*])?;");
 
-    private static final Pattern P_TIMING = Pattern.compile("timing\\([0-9]+,[0-9.]+,[0-9.]+\\);");
+    private static final Pattern P_TIMING = Pattern.compile("timing\\([0-9]+,-?[0-9.]+,[0-9.]+\\);");
 
     private static final Pattern P_SCENE_CONTROL = Pattern.compile("scenecontrol\\([0-9]+,enwidencamera,[0-9.]+,[01]\\);");
 
+    private int note;
+
     public Aff(File affFile) {
         this.affFile = affFile;
-        analyzeAff();
+        analyzeAffThenSort();
+        calculateAndSetNote();
     }
 
-    private void analyzeAff() {
+    private void analyzeAffThenSort() {
         try (BufferedReader br = new BufferedReader(new FileReader(affFile))) {
             String line;
             // 读取文件头
@@ -136,19 +138,38 @@ public class Aff {
                     } else if (P_HOLD.matcher(line).matches()) {
                         Objects.requireNonNullElse(tempTimingGroup, baseTimingGroup).noteList.add(new Hold(line));
                     } else if (P_ARC.matcher(line).matches()) {
-                        Objects.requireNonNullElse(tempTimingGroup, baseTimingGroup).noteList.add(new Arc(line));
+                        // Arc 语句只添加两种键型：1.有天键 2.为蛇且时间长度不为0
+                        Arc arc = new Arc(line);
+                        boolean haveArcTap = arc.getTList().size() > 0;
+                        boolean isNotSkyLineAndNotZeroLen = !arc.isSkylineBoolean() && arc.getT1() != arc.getT2();
+                        if (haveArcTap || isNotSkyLineAndNotZeroLen) {
+                            Objects.requireNonNullElse(tempTimingGroup, baseTimingGroup).noteList.add(arc);
+                        }
                     } else if (P_TIMING.matcher(line).matches()) {
                         Objects.requireNonNullElse(tempTimingGroup, baseTimingGroup).timingList.add(new Timing(line));
                     } else if (P_SCENE_CONTROL.matcher(line).matches()) {
+                        // 能满足 P_SCENE_CONTROL 的只有 enwidencamera 语句
                         sceneControlList.add(new SceneControl(line));
-                    } else {
-                        System.out.println("未识别：" + line);
                     }
                 }
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
+        for (var timingGroup : timingGroupList) {
+            Collections.sort(timingGroup.noteList);
+            Collections.sort(timingGroup.timingList);
+        }
+        Collections.sort(sceneControlList);
     }
 
+    /**
+     * 计算谱面的按键总数，并赋值给 {@link #note} 便于后续使用.
+     */
+    private void calculateAndSetNote() {
+        note = 0;
+        for (var timingGroup : timingGroupList) {
+            note += timingGroup.getNote(timingPointDensityFactor);
+        }
+    }
 }
