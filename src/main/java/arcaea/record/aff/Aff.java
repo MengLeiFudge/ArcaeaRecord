@@ -3,16 +3,19 @@ package arcaea.record.aff;
 import arcaea.record.aff.note.Arc;
 import arcaea.record.aff.note.Click;
 import arcaea.record.aff.note.Hold;
+import arcaea.record.aff.note.Note;
 import arcaea.record.aff.timing.Timing;
 import arcaea.record.aff.view.SceneControl;
 import lombok.Data;
-import org.apache.commons.lang3.SerializationUtils;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.regex.Pattern;
 
 /**
@@ -46,11 +49,9 @@ public class Aff {
     private double timingPointDensityFactor = 1;
 
     /**
-     * 按键组列表.
-     * <p>
-     * 任何谱子都可分为多个按键组，不在 timinggroup 内部的都认为在默认按键组。
+     * 按键列表.
      */
-    private List<TimingGroup> timingGroupList = new ArrayList<>();
+    private List<Note> noteList = new ArrayList<>();
 
     /**
      * 视觉列表.
@@ -71,20 +72,27 @@ public class Aff {
 
     private static final Pattern P_SCENE_CONTROL = Pattern.compile("scenecontrol\\([0-9]+,enwidencamera,[0-9.]+,[01]\\);");
 
-    private int note;
+    /**
+     * 谱面note总数.
+     */
+    private int noteCount = 0;
 
     public Aff(File affFile) {
         this.affFile = affFile;
-        analyzeAffThenSort();
-        calculateAndSetNote();
+        readAffAndPreProcess();
     }
 
-    private void analyzeAffThenSort() {
+    private void readAffAndPreProcess() {
+        // 用于判断所有蛇有没有头判
+        List<Arc> arcList = new ArrayList<>();
+        // 用于后续处理和计算
+        List<TimingGroup> timingGroupList = new ArrayList<>();
+        // 读取 aff 文件
         try (BufferedReader br = new BufferedReader(new FileReader(affFile))) {
             String line;
-            // 读取文件头
+            // 读取信息部分
             while ((line = br.readLine()) != null) {
-                line = line.trim();
+                line = line.replace(" ", "");
                 if ("-".equals(line)) {
                     break;
                 }
@@ -94,82 +102,113 @@ public class Aff {
                     timingPointDensityFactor = Double.parseDouble(line.substring("TimingPointDensityFactor:".length()));
                 }
             }
-            // 创建默认 timinggroup 以及临时 timinggroup，根据 tempTimingGroup 是否为 null 判断将新按键放入哪里
-            TimingGroup baseTimingGroup = new TimingGroup();
-            timingGroupList.add(baseTimingGroup);
-            TimingGroup tempTimingGroup = null;
-            // 读取按键
+            // 创建两个 timingGroup
+            TimingGroup baseTimingGroup = new TimingGroup(false);
+            TimingGroup currTimingGroup = baseTimingGroup;
+            // 读取按键部分
             while ((line = br.readLine()) != null) {
-                line = line.trim();
+                line = line.replace(" ", "");
                 if (line.startsWith("timinggroup")) {
-                    // 一个新的 timinggroup
+                    boolean noInput = false;
                     String param = line.substring("timinggroup(".length(), line.length() - 2);
                     if (!"".equals(param)) {
                         // 带参 timinggroup，参数以 _ 分隔
                         List<String> paramList = Arrays.stream(param.split("_")).toList();
-                        // fadingholds、anglex、angley 均对落点无影响，无需判断
-                        if (paramList.contains("noinput")) {
-                            // noinput 里面的按键都是动画效果，无需处理
-                            while ((line = br.readLine()) != null) {
-                                line = line.trim();
-                                if ("};".equals(line)) {
-                                    break;
-                                }
-                            }
+                        noInput = paramList.contains("noinput");
+                    }
+                    currTimingGroup = new TimingGroup(noInput);
+                } else if ("};".equals(line)) {
+                    processTimingGroup(currTimingGroup);
+                    timingGroupList.add(currTimingGroup);
+                    currTimingGroup = baseTimingGroup;
+                } else {
+                    if (P_CLICK.matcher(line).matches()) {
+                        Click click = new Click(line);
+                        currTimingGroup.noteList.add(click);
+                    } else if (P_HOLD.matcher(line).matches()) {
+                        Hold hold = new Hold(line);
+                        currTimingGroup.noteList.add(hold);
+                    } else if (P_ARC.matcher(line).matches()) {
+                        Arc arc = new Arc(line);
+                        // 不处理黑线
+                        if (arc.getArctapList().isEmpty() && arc.isSkylineBoolean()) {
                             continue;
                         }
-                        // 走到这里说明是没有 noinput 参数的 timinggroup
-                    }
-                    // 无参 timinggroup，或没有 noinput 参数的 timinggroup
-                    tempTimingGroup = new TimingGroup();
-                } else if (line.startsWith("};")) {
-                    if (tempTimingGroup == null) {
-                        throw new IllegalStateException("检测到 timinggroup 结尾但是未检测到开头");
-                    }
-                    // timinggroup 结尾，且此时 tempTimingGroup 一定不为 null
-                    if (!tempTimingGroup.noteList.isEmpty()) {
-                        timingGroupList.add(SerializationUtils.clone(tempTimingGroup));
-                    }
-                    tempTimingGroup = null;
-                } else {
-                    // 非 timinggroup 语句
-                    if (P_CLICK.matcher(line).matches()) {
-                        Objects.requireNonNullElse(tempTimingGroup, baseTimingGroup).noteList.add(new Click(line));
-                    } else if (P_HOLD.matcher(line).matches()) {
-                        Objects.requireNonNullElse(tempTimingGroup, baseTimingGroup).noteList.add(new Hold(line));
-                    } else if (P_ARC.matcher(line).matches()) {
-                        // Arc 语句只添加两种键型：1.有天键 2.为蛇且时间长度不为0
-                        Arc arc = new Arc(line);
-                        boolean haveArcTap = arc.getTList().size() > 0;
-                        boolean isNotSkyLineAndNotZeroLen = !arc.isSkylineBoolean() && arc.getT1() != arc.getT2();
-                        if (haveArcTap || isNotSkyLineAndNotZeroLen) {
-                            Objects.requireNonNullElse(tempTimingGroup, baseTimingGroup).noteList.add(arc);
+                        currTimingGroup.noteList.add(arc);
+                        // 蛇需要添加到arcList中
+                        if (!arc.isSkylineBoolean()) {
+                            arcList.add(arc);
                         }
                     } else if (P_TIMING.matcher(line).matches()) {
-                        Objects.requireNonNullElse(tempTimingGroup, baseTimingGroup).timingList.add(new Timing(line));
+                        Timing timing = new Timing(line);
+                        currTimingGroup.timingList.add(timing);
                     } else if (P_SCENE_CONTROL.matcher(line).matches()) {
                         // 能满足 P_SCENE_CONTROL 的只有 enwidencamera 语句
-                        sceneControlList.add(new SceneControl(line));
+                        SceneControl sceneControl = new SceneControl(line);
+                        sceneControlList.add(sceneControl);
                     }
                 }
             }
+            processTimingGroup(baseTimingGroup);
+            timingGroupList.add(baseTimingGroup);
         } catch (IOException e) {
             e.printStackTrace();
         }
-        for (var timingGroup : timingGroupList) {
-            Collections.sort(timingGroup.noteList);
-            Collections.sort(timingGroup.timingList);
-        }
+        Collections.sort(arcList);
         Collections.sort(sceneControlList);
+        // 遍历 arcList，修改 hasHead 变量
+        for (int i = 0; i < arcList.size(); i++) {
+            Arc arci = arcList.get(i);
+            for (int j = i + 1; j < arcList.size(); j++) {
+                Arc arcj = arcList.get(j);
+                if (Math.abs(arcj.getX1() - arci.getX2()) < 0.1
+                        && Math.abs(arcj.getY1() - arci.getY2()) < 1e-5
+                        && Math.abs(arcj.getT1() - arci.getT2()) <= 10) {
+                    arcj.setHasHead(true);
+                }
+            }
+        }
+        // 构建 noteList，具有 noinput 属性的按键不会加入 noteList
+        for (var timingGroup : timingGroupList) {
+            if (timingGroup.noInput) {
+                continue;
+            }
+            noteList.addAll(timingGroup.noteList);
+        }
+        Collections.sort(noteList);
+        // 计算 noteCount
+        for (var note : noteList) {
+            noteCount += note.getNoteCount();
+        }
     }
 
     /**
-     * 计算谱面的按键总数，并赋值给 {@link #note} 便于后续使用.
+     * 根据 timingList 的情况，给每个 note 赋值 beatTime.
+     *
+     * @param timingGroup 要处理的时间组
      */
-    private void calculateAndSetNote() {
-        note = 0;
-        for (var timingGroup : timingGroupList) {
-            note += timingGroup.getNote(timingPointDensityFactor);
+    private void processTimingGroup(TimingGroup timingGroup) {
+        Collections.sort(timingGroup.noteList);
+        Collections.sort(timingGroup.timingList);
+        int timingIndex = -1;
+        float bpm;
+        int nextT = Integer.MIN_VALUE;
+        float beatTime = 0;
+        for (var note : timingGroup.noteList) {
+            while (note.getT1() >= nextT) {
+                timingIndex++;
+                bpm = Math.abs(timingGroup.timingList.get(timingIndex).getBpm());
+                nextT = timingIndex == timingGroup.timingList.size() - 1
+                        ? Integer.MAX_VALUE
+                        : timingGroup.timingList.get(timingIndex + 1).getT();
+                if (bpm == 0) {
+                    beatTime = Float.MAX_VALUE;
+                } else {
+                    beatTime = bpm >= 256 ? 60000 / bpm : 30000 / bpm;
+                    beatTime /= timingPointDensityFactor;
+                }
+            }
+            note.setBeatTime(beatTime);
         }
     }
 }

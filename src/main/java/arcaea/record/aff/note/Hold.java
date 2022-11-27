@@ -1,11 +1,9 @@
 package arcaea.record.aff.note;
 
-import arcaea.record.aff.timing.Timing;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.io.Serializable;
-import java.util.List;
 
 /**
  * @author MengLeiFudge
@@ -13,14 +11,6 @@ import java.util.List;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class Hold extends Note implements Serializable, Comparable<Note> {
-    /**
-     * 起始时间.
-     */
-    int t1;
-    /**
-     * 结束时间.
-     */
-    int t2;
     /**
      * 所在轨道（0-5）.
      */
@@ -36,8 +26,8 @@ public class Hold extends Note implements Serializable, Comparable<Note> {
     @Override
     public int compareTo(Note o) {
         if (o instanceof Click oClick) {
-            if (t1 != oClick.t) {
-                return t1 - oClick.t;
+            if (t1 != oClick.t1) {
+                return t1 - oClick.t1;
             }
             return 1;
         }
@@ -59,9 +49,21 @@ public class Hold extends Note implements Serializable, Comparable<Note> {
         throw new IllegalArgumentException("无法比较 " + this.getClass() + " 与 " + o.getClass());
     }
 
+    /**
+     * 返回 note 总数.
+     * <p>
+     * 计算规则如下：
+     * <ul>
+     *     <li>按 beatTime 分割为多个判定块，最后一个判定块长度为[1判定块,2判定块)</li>
+     *     <li>除第一个判定块外，其余判定块头+1combo</li>
+     *     <li>至少有1combo</li>
+     * </ul>
+     *
+     * @return 该长条的 note 总数
+     */
     @Override
-    public int getNote(List<Timing> timingList, double timingPointDensityFactor) {
-        double beatTime = getBeatTime(timingList, timingPointDensityFactor, t1);
-        return Math.max((int) ((t2 - t1) / beatTime) - 1, 1);
+    public int getNoteCount() {
+        int beatCount = (int) ((t2 - t1) / beatTime);
+        return Math.max(beatCount - 1, 1);
     }
 }

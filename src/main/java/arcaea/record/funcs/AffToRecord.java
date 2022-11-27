@@ -295,7 +295,7 @@ public class AffToRecord {
             return;
         }
         String parentDirName = file.getParentFile().getName();
-        int note = new Aff(file).getNote();
+        int note = new Aff(file).getNoteCount();
         String sid = parentDirName.toLowerCase(Locale.ROOT);
         if (sid.startsWith("dl_")) {
             sid = sid.substring(3);
