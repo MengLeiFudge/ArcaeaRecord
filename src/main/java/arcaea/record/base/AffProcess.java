@@ -1,6 +1,7 @@
 package arcaea.record.base;
 
 import arcaea.record.SettingsAndUtils;
+import arcaea.record.aff.Resolution;
 import lombok.Data;
 
 import java.io.File;
@@ -21,7 +22,7 @@ public class AffProcess {
     private final File affFile;
     private final String song;
     private final String difficultyStr;
-    private final SettingsAndUtils.Resolution resolution;
+    private final Resolution resolution;
     private final List<BaseProcess> baseProcessList = new ArrayList<>();
 
     public void addBaseProcess(File targetDir, int miss, int minPure,

@@ -1,12 +1,24 @@
 package arcaea.record.base;
 
 import arcaea.record.SettingsAndUtils;
+import arcaea.record.aff.Resolution;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 
-import java.io.*;
-import java.util.*;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Random;
 
 /**
  * 谱面数据结构.
@@ -14,7 +26,7 @@ import java.util.*;
  * @author MengLeiFudge
  */
 public class Record implements Serializable {
-    private final SettingsAndUtils.Resolution resolution;
+    private final Resolution resolution;
     /**
      * 谱面按键时间最小值.
      */
@@ -67,7 +79,7 @@ public class Record implements Serializable {
          */
     }
 
-    Record(SettingsAndUtils.Resolution resolution) {
+    Record(Resolution resolution) {
         this.resolution = resolution;
         //Arrays.fill(arcEndTime,-999999);
         //Arrays.fill(arcEndX,-999999);
@@ -376,32 +388,9 @@ public class Record implements Serializable {
     }
 
     public void hold(int beginTime, int endTime, int position) {
-        // 长条和地键触控点使用比y=0更低的位置
-        // 好吧，事实证明这样没用。只要长条跟蛇同一个x，就会被带走。
-        // 那么，如果不是同一个x。。？
-        // 我给x减了0.23，但愿不会越界。
-        // 果然，越界了。我应该把触控点也往下移。
-        // nmd，不出所料，有的越界有的不越界，这是逼我写一个switch啊
-
-        //press(beginTime, endTime,
-        //        //resolution.convertToX((double) position / 2 - 0.75, 0.0) + getRandomPositionDeflection(),
-        //        resolution.convertToX((double) position / 2 - 0.75 - 0.23, 0.0) + getRandomPositionDeflection(),
-        //        //resolution.convertToY(0.0) + getRandomPositionDeflection());
-        //        (int) (resolution.getMaxY() * 0.98) + getRandomPositionDeflection());
-
-        int x = switch (position) {
-            case 1 -> (int) (resolution.getMaxX() * 0.02);
-            case 2 -> (int) (resolution.getMaxX() * 0.29);
-
-
-            case 3 -> (int) (resolution.getMaxX() * 0.71);
-            case 4 -> (int) (resolution.getMaxX() * 0.98);
-            default -> throw new IllegalStateException("Unexpected value: " + position);
-        };
-
-        int y = (int) (resolution.getMaxY() * 0.98);
-
-        press(beginTime, endTime, x, y);
+        press(beginTime, endTime,
+                resolution.convertToX((double) position / 2 - 0.75, 0.0) + getRandomPositionDeflection(),
+                resolution.convertToY(0.0) + getRandomPositionDeflection());
     }
 
     public void arc(int beginTime, int endTime, double beginX, double endX,

@@ -1,6 +1,7 @@
 package arcaea.record.funcs;
 
 import arcaea.record.SettingsAndUtils;
+import arcaea.record.aff.Resolution;
 import arcaea.record.base.AffProcess;
 import arcaea.record.base.ConvertThreadPoolExecutor;
 
@@ -58,7 +59,7 @@ public class CreateUnlockRecords {
         ArrayList<AffProcess> processList = new ArrayList<>();
         for (int i = 0; i < 4; i++) {
             AffProcess process = new AffProcess(affFiles[i], "Temp",
-                    SettingsAndUtils.DIFFICULTY_STR[i], SettingsAndUtils.Resolution.R1280_720);
+                    SettingsAndUtils.DIFFICULTY_STR[i], Resolution.R16_9_1280_720);
             process.addBaseProcess(recordDir, 0, 0, true, false);
             processList.add(process);
         }

@@ -3,6 +3,7 @@ package arcaea.record.funcs;
 import arcaea.record.Main;
 import arcaea.record.SettingsAndUtils;
 import arcaea.record.aff.Aff;
+import arcaea.record.aff.Resolution;
 import arcaea.record.base.AffProcess;
 import arcaea.record.base.ConvertThreadPoolExecutor;
 import arcaea.record.base.MissAndMinPure;
@@ -12,7 +13,11 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
@@ -41,7 +46,7 @@ public class AffToRecord {
     private SettingsAndUtils.RunState runState;
     private SettingsAndUtils.Mirror mirror;
     private MissAndMinPure missAndMinPure;
-    private SettingsAndUtils.Resolution resolution;
+    private Resolution resolution;
     private final List<File> zipDirList = new ArrayList<>();
 
     public void process() {
@@ -88,7 +93,7 @@ public class AffToRecord {
         maxDifficulty = 3;
         runState = SettingsAndUtils.RunState.SONG_START_BEGIN;
         mirror = SettingsAndUtils.Mirror.BOTH;
-        resolution = SettingsAndUtils.Resolution.R1280_720;
+        resolution = Resolution.R16_9_1280_720;
 
         targetDir = new File(SettingsAndUtils.VMS_DIR, "脚本/0L2%");
         try {
@@ -250,14 +255,14 @@ public class AffToRecord {
         missAndMinPure = new MissAndMinPure(missStr, minPureStr);
 
         System.out.println("选择分辨率：");
-        SettingsAndUtils.Resolution[] resolutions = SettingsAndUtils.Resolution.values();
+        Resolution[] resolutions = Resolution.values();
         int i = 1;
-        for (SettingsAndUtils.Resolution r : resolutions) {
+        for (Resolution r : resolutions) {
             System.out.println((i++) + "." + r.getDescribe());
         }
-        System.out.println("回车表示 " + SettingsAndUtils.Resolution.R1280_720.getDescribe());
+        System.out.println("回车表示 " + Resolution.R16_9_1280_720.getDescribe());
         s = Main.sc.nextLine();
-        resolution = s.length() == 0 ? SettingsAndUtils.Resolution.R1280_720 : resolutions[Integer.parseInt(s) - 1];
+        resolution = s.length() == 0 ? Resolution.R16_9_1280_720 : resolutions[Integer.parseInt(s) - 1];
 
         getProcessList(affDir);
     }

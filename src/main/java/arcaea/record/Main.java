@@ -1,6 +1,11 @@
 package arcaea.record;
 
-import arcaea.record.funcs.*;
+import arcaea.record.funcs.AffToRecord;
+import arcaea.record.funcs.CreateUnlockRecords;
+import arcaea.record.funcs.DeleteRecords;
+import arcaea.record.funcs.FreshSongInfo;
+import arcaea.record.funcs.GetAllFiles;
+import arcaea.record.funcs.Test;
 
 import java.util.Scanner;
 

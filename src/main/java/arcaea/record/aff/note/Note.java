@@ -25,11 +25,6 @@ public abstract class Note implements Serializable, Comparable<Note> {
     float beatTime;
 
     /**
-     * 4k/6k进度比例，0表示4k，1表示6k.
-     */
-    float enwidenRatio = 0;
-
-    /**
      * 返回该键型对应的总note数.
      */
     public abstract int getNoteCount();
