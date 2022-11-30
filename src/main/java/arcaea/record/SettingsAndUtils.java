@@ -1,6 +1,5 @@
 package arcaea.record;
 
-import arcaea.record.base.SimpleAction;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -10,7 +9,10 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
 
 /**
  * 设定 arc 文件夹的位置，以及其他参数.
@@ -114,32 +116,6 @@ public class SettingsAndUtils {
     public static final String[] DIFFICULTY_STR = {"PST", "PRS", "FTR", "BYD"};
 
     /**
-     * 脚本运行类型.
-     */
-    public enum RunState {
-        // 【推荐】歌曲开始时运行。
-        // 指点击曲目，游戏“关门”后，就开始运行脚本。
-        SONG_START_BEGIN,
-        // 【不推荐】首键到达判定线时运行。
-        // 指开始曲目后按住脚本开始按钮，第一个键到达判定位置时松手。
-        FIRST_NOTE_BEGIN,
-        // 两种运行脚本都生成。
-        BOTH
-    }
-
-    /**
-     * 脚本镜像类型.
-     */
-    public enum Mirror {
-        // 使用原版
-        ORIGIN,
-        // 使用镜像
-        MIRROR,
-        // 二者都生成
-        BOTH
-    }
-
-    /**
      * 某个ID多次使用时，各个操作之间的最短间隔.
      * <p>
      * 这玩意好像没啥必要。
@@ -178,6 +154,13 @@ public class SettingsAndUtils {
      * 地键/天键点击时间.
      */
     public static final int CLICK_TIME = 100;
+
+    /**
+     * 点击继续按钮的抬起时机.
+     * <p>
+     * 如果
+     */
+    public static final int CONTINUE_TIME = 6990;
 
 
     static SimpleDateFormat sdf = new SimpleDateFormat("MMdd_HHmmss");

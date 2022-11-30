@@ -3,6 +3,7 @@ package arcaea.record.aff.view;
 import lombok.Data;
 
 import java.io.Serializable;
+import java.util.List;
 
 /**
  * 仅表示参数为 enwidencamera 的语句.

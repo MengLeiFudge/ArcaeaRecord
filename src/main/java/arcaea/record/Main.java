@@ -3,7 +3,6 @@ package arcaea.record;
 import arcaea.record.funcs.AffToRecord;
 import arcaea.record.funcs.CreateUnlockRecords;
 import arcaea.record.funcs.DeleteRecords;
-import arcaea.record.funcs.FreshSongInfo;
 import arcaea.record.funcs.GetAllFiles;
 import arcaea.record.funcs.Test;
 
@@ -30,17 +29,15 @@ public class Main {
             System.out.println("※ 该项目仅供学习研究之用 ※");
             System.out.println("选择功能：");
             System.out.println("1.获取所有谱面、音乐、曲绘，以及搭档头像、全身图");
-            System.out.println("2.补全 songInfo.csv 并排序");
-            System.out.println("3.谱面文件转换为脚本");
-            System.out.println("4.生成 Tempestissimo/Testify 相关解锁脚本");
-            System.out.println("5.删除指定文件夹（包括子文件夹）内所有脚本");
+            System.out.println("2.谱面文件转换为脚本");
+            System.out.println("3.生成 Tempestissimo/Testify 相关解锁脚本");
+            System.out.println("4.删除指定文件夹（包括子文件夹）内所有脚本");
             System.out.println("0.结束");
             switch (sc.nextLine()) {
                 case "1" -> new GetAllFiles().process();
-                case "2" -> new FreshSongInfo().process();
-                case "3" -> new AffToRecord().process();
-                case "4" -> new CreateUnlockRecords().process();
-                case "5" -> new DeleteRecords().process();
+                case "2" -> new AffToRecord().process();
+                case "3" -> new CreateUnlockRecords().process();
+                case "4" -> new DeleteRecords().process();
                 case "0" -> {
                     System.out.println("喜欢本项目的话，请给萌泪点个star！");
                     return;

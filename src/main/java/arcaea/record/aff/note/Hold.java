@@ -3,8 +3,6 @@ package arcaea.record.aff.note;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
-import java.io.Serializable;
-
 /**
  * @author MengLeiFudge
  */

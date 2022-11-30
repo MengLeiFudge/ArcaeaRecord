@@ -211,4 +211,21 @@ public class Aff {
             note.setBeatTime(beatTime);
         }
     }
+
+    public double getRatio46k(int time) {
+        double ratio46k = 0;
+        for (var control : sceneControlList) {
+            if (control.getT() <= time) {
+                if (control.getT() + control.getDuration() <= time) {
+                    ratio46k = control.isTo6k() ? 1 : 0;
+                } else {
+                    double progress = (time - control.getT()) * 1.0 / control.getDuration();
+                    ratio46k = control.isTo6k() ? progress : 1 - progress;
+                }
+            } else {
+                break;
+            }
+        }
+        return ratio46k;
+    }
 }

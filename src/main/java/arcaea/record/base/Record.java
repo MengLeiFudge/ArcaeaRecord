@@ -1,10 +1,13 @@
 package arcaea.record.base;
 
 import arcaea.record.SettingsAndUtils;
-import arcaea.record.aff.Resolution;
+import arcaea.record.record.Resolution;
+import arcaea.record.record.SimpleAction;
+import arcaea.record.record.TouchIdManager;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
+import lombok.Data;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -18,19 +21,19 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Random;
 
 /**
  * 谱面数据结构.
  *
  * @author MengLeiFudge
  */
+@Data
 public class Record implements Serializable {
     private final Resolution resolution;
     /**
      * 谱面按键时间最小值.
      */
-    private int minTime = 999999;
+    int minTime = 999999;
     /**
      * 谱面按键时间最大值.
      */
@@ -53,124 +56,8 @@ public class Record implements Serializable {
     private final int[] arcEndY = new int[SettingsAndUtils.ARC_KINDS];
     private final ArrayList<SimpleAction> simpleActions = new ArrayList<>();
 
-
-    private static final Random random = new Random();
-
-    public static int getRandomInt(int min, int max) {
-        return random.nextInt(max - min + 1) + min;
-    }
-
-    /**
-     * 随机坐标偏移.
-     *
-     * @return 返回以分辨率宽为基准的随机坐标偏移
-     */
-    public int getRandomPositionDeflection() {
-        return 0;
-        /*
-        int maxR = (int) (-0.03 * resolution.getMaxX());
-        int ret;
-        while (true) {
-            ret = getRandomInt(-maxR, maxR);
-            if (ret * ret * 2 <= maxR * maxR) {
-                return ret;
-            }
-        }
-         */
-    }
-
     Record(Resolution resolution) {
         this.resolution = resolution;
-        //Arrays.fill(arcEndTime,-999999);
-        //Arrays.fill(arcEndX,-999999);
-        //Arrays.fill(arcEndTime,-999999);
-    }
-
-    /**
-     * 从谱面文件获取所有按键信息，以及按键的最小、最大时间.
-     */
-    void getNoteInfo(File affFile) {
-        // timinggroup 可能导致蛇的读取顺序错乱，该数组用于给蛇排序
-        List<ArcAction> arcActions = new ArrayList<>();
-        try (BufferedReader br = new BufferedReader(new FileReader(affFile))) {
-            String s;
-            while ((s = br.readLine()) != null) {
-                // 去掉首尾空格，避免timinggroup内部按键不能正确读取
-                s = s.trim();
-                if (s.length() == 0) {
-                    continue;
-                }
-                if (s.charAt(0) == '(') {
-                    // 地面单点
-                    // eg: "(8400,3);"
-                    // 时间戳（ms为单位），键位（1-4，从左到右）
-                    String[] click = s.substring(1, s.length() - 2).split(",");
-                    int time = Integer.parseInt(click[0]);
-                    minTime = Math.min(time, minTime);
-                    maxTime = Math.max(time + 20, maxTime);
-                    int position = Integer.parseInt(click[1]);
-                    click(time, position);
-                } else if (s.charAt(0) == 'h') {
-                    // 地面长条
-                    String[] hold = s.substring(5, s.length() - 2).split(",");
-                    int bt = Integer.parseInt(hold[0]);
-                    int et = Integer.parseInt(hold[1]);
-                    minTime = Math.min(bt, minTime);
-                    maxTime = Math.max(et, maxTime);
-                    int position = Integer.parseInt(hold[2]);
-                    hold(bt, et, position);
-                } else if (s.charAt(0) == 'a') {
-                    // 蛇
-                    if (!s.contains("arctap") && s.contains("true")) {
-                        // eg: "arc(2400,6000,0.13,0.50,b,0.50,0.50,0,none,true);"
-                        // 忽略黑线
-                        continue;
-                    }
-                    // eg1: "arc(2400,6000,0.00,0.33,b,1.00,0.00,0,none,false);"
-                    // 开始时间戳，结束时间戳，开始x，结束x，蛇类型，
-                    // 开始y，结束y，蛇颜色，none（目前无意义），是否为黑线
-                    // eg2: "arc(18000,19200,0.50,0.75,b,1.00,1.00,1,none,true)[arctap(18600)];"
-                    // 18600 表示天键时间戳
-                    // eg3: "arc(19200,21600,0.75,0.25,b,1.00,1.00,0,none,true)[arctap(19800),arctap(21000)];"
-                    String[] data = s.split("\\[");
-                    // data[0] = "arc(2400,6000,0.00,0.33,b,1.00,0.00,0,none,false)"
-                    // data[1] = "arctap(19800),arctap(21000)];"（不一定存在）
-                    String[] arc = data[0].substring(4, data[0].length() - 1).split(",");
-                    int bt = Integer.parseInt(arc[0]);
-                    int et = Integer.parseInt(arc[1]);
-                    double beginX = Double.parseDouble(arc[2]);
-                    double endX = Double.parseDouble(arc[3]);
-                    String type = arc[4];
-                    double beginY = Double.parseDouble(arc[5]);
-                    double endY = Double.parseDouble(arc[6]);
-                    int color = Integer.parseInt(arc[7]);
-                    if (!s.contains("arctap")) {
-                        // 蛇
-                        minTime = Math.min(bt, minTime);
-                        maxTime = Math.max(et, maxTime);
-                        arcActions.add(new ArcAction(bt, et, beginX, endX, type, beginY, endY, color));
-                    } else {
-                        // 天空键
-                        String[] arctap = data[1].substring(7, data[1].length() - 3)
-                                .split("\\),arctap\\(");
-                        // eg: "arctap(18600)"
-                        for (String str : arctap) {
-                            int time = Integer.parseInt(str);
-                            minTime = Math.min(time, minTime);
-                            maxTime = Math.max(time + 20, maxTime);
-                            arctap(bt, et, beginX, endX, type, beginY, endY, time);
-                        }
-                    }
-                }
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        arcActions.sort(Comparator.comparingInt(ArcAction::getBeginTime));
-        for (ArcAction a : arcActions) {
-            arc(a.getBeginTime(), a.getEndTime(), a.getBeginX(), a.getEndX(),
-                    a.getType(), a.getBeginY(), a.getEndY(), a.getColor());
-        }
     }
 
     /**
@@ -189,126 +76,6 @@ public class Record implements Serializable {
     }
 
 
-    /*-- 谱面坐标换算为模拟器坐标 --*/
-
-    /**
-     * 将均匀的比例值转换为贝赛尔比例值.
-     * 由于具体转换函数未知，故采用分段近似直线计算.
-     * 先判断该值在哪个区间，再用近似直线计算出对应贝赛尔比例值.
-     *
-     * @param ratio 均匀的比例
-     * @param arr   贝赛尔比例数组
-     * @return 近似的贝塞尔比例值
-     */
-    private double ratio(double ratio, double[] arr) {
-        if (ratio < 0 || ratio > 1) {
-            throw new IllegalArgumentException("比例越界：" + ratio);
-        }
-        // 转换区间左闭右开，增加ratio是否为1的判断，误差取0.001
-        if (Math.abs(ratio - 1) < 1e-3) {
-            return 1;
-        }
-        // len 表示区间的个数
-        int len = arr.length - 1;
-        // 寻找 ratio 对应哪一个区间
-        for (int i = 0; i < len; i++) {
-            // 用均匀数值判断对应的区间位置
-            if (ratio < (double) (i + 1) / len) {
-                // 取用贝赛尔比例对应区间的上下限，进行转换
-                // 贝塞尔两点：((double) i / len, arr[i]), ((double) (i + 1) / len, arr[i + 1])
-                // 贝塞尔该段近似直线方程：y = (arr[i + 1] - arr[i]) * (len * x - i) + arr[i]
-                return (arr[i + 1] - arr[i]) * (len * ratio - i) + arr[i];
-            }
-        }
-        throw new RuntimeException("比例 " + ratio + " 转换出错！\n" +
-                "该信息不应出现，请检查代码！");
-    }
-
-    private static final double[] SI = {
-            0, 0.098, 0.196, 0.291, 0.383, 0.472, 0.556, 0.635,
-            0.707, 0.773, 0.832, 0.882, 0.924, 0.957, 0.981, 0.995, 1
-    };
-
-    private double siRatio(double ratio) {
-        return ratio(ratio, SI);
-    }
-
-    private static final double[] SO = {
-            0, 0.005, 0.019, 0.043, 0.076, 0.118, 0.169, 0.227,
-            0.293, 0.365, 0.445, 0.528, 0.617, 0.709, 0.805, 0.902, 1
-    };
-
-    private double soRatio(double ratio) {
-        return ratio(ratio, SO);
-    }
-
-    private int getX(int beginTime, int endTime, double beginX, double endX,
-                     String type, double beginY, double endY, int time) {
-        if (time < beginTime || time > endTime) {
-            throw new IllegalArgumentException("按键时间错误：time " + time
-                    + "不在 [" + beginTime + ", " + endTime + "] 区间内");
-        }
-        double ratioX = time == beginTime ? 0.0 :
-                (double) (time - beginTime) / (endTime - beginTime);// 0到1的一个值
-        if (type.equals("b")) {
-            if (ratioX < 0.5) {
-                return getX(beginTime, (beginTime + endTime) / 2,
-                        beginX, (beginX + endX) / 2, "soso",
-                        beginY, (beginY + endY) / 2, time);
-            } else {
-                return getX((beginTime + endTime) / 2, endTime,
-                        (beginX + endX) / 2, endX, "sisi",
-                        (beginY + endY) / 2, endY, time);
-            }
-        }
-        if (type.startsWith("si")) {
-            ratioX = siRatio(ratioX);
-        } else if (type.startsWith("so")) {
-            ratioX = soRatio(ratioX);
-        } else if (!type.equals("s")) {
-            throw new IllegalArgumentException("arc类型错误：" + type);
-        }
-        double ratioY = ratioX;
-        if (type.equals("sisi") || type.equals("sosi")) {
-            ratioY = siRatio(ratioY);
-        } else if (type.equals("siso") || type.equals("soso")) {
-            ratioY = soRatio(ratioY);
-        } else if (!type.equals("s") && !type.equals("si") && !type.equals("so")) {
-            throw new IllegalArgumentException("arc类型错误：" + type);
-        }
-        return resolution.convertToX(ratioX * (endX - beginX) + beginX, ratioY * (endY - beginY) + beginY);
-    }
-
-    private int getY(int beginTime, int endTime, double beginX, double endX,
-                     String type, double beginY, double endY, int time) {
-        if (time < beginTime || time > endTime) {
-            throw new IllegalArgumentException("按键时间错误：time " + time
-                    + "不在 [" + beginTime + ", " + endTime + "] 区间内");
-        }
-        double ratioY = time == beginTime ? 0.0 :
-                (double) (time - beginTime) / (endTime - beginTime);// 0到1的一个值
-        if (type.equals("b")) {
-            if (ratioY < 0.5) {
-                return getY(beginTime, (beginTime + endTime) / 2,
-                        beginX, (beginX + endX) / 2, "soso",
-                        beginY, (beginY + endY) / 2, time);
-            } else {
-                return getY((beginTime + endTime) / 2, endTime,
-                        (beginX + endX) / 2, endX, "sisi",
-                        (beginY + endY) / 2, endY, time);
-            }
-        }
-        if (type.equals("sisi") || type.equals("sosi")) {
-            ratioY = siRatio(ratioY);
-        } else if (type.equals("siso") || type.equals("soso")) {
-            ratioY = soRatio(ratioY);
-        } else if (!type.equals("s") && !type.equals("si") && !type.equals("so")) {
-            throw new IllegalArgumentException("arc类型错误：" + type);
-        }
-        return resolution.convertToY(ratioY * (endY - beginY) + beginY);
-    }
-
-
     /*-- 按键转为 Action 并保存在 actions 中 --*/
 
     /**
@@ -319,21 +86,6 @@ public class Record implements Serializable {
      * @return 该操作对应的ID
      */
     private int getID(int beginTime, int endTime) {
-        /*
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < MAX_TAP; i++) {
-            sb.append(useTime[i]).append(" ");
-        }
-        System.out.println(sb.toString());
-        for (int i = 0; i < MAX_TAP; i++) {
-            // ID未使用过/该ID已经闲置较长时间，这两种情况可以使用该ID
-            if (useTime[i] == 0 || beginTime - useTime[i] > WAIT_TIME) {
-                useTime[i] = endTime;
-                return i;
-            }
-        }
-
-         */
         int id = touchIdManager.getId(beginTime, endTime);
         if (id == -1) {
             throw new ArrayIndexOutOfBoundsException("所需ID超过" + SettingsAndUtils.MAX_TOUCH_NUM + "，需扩充数组！");
@@ -388,14 +140,14 @@ public class Record implements Serializable {
     }
 
     public void hold(int beginTime, int endTime, int position) {
-        press(beginTime, endTime,
-                resolution.convertToX((double) position / 2 - 0.75, 0.0) + getRandomPositionDeflection(),
-                resolution.convertToY(0.0) + getRandomPositionDeflection());
+       /* press(beginTime, endTime,
+                resolution.convertToX((double) position / 2 - 0.75, 0.0),
+                resolution.convertToY(0.0));*/
     }
 
     public void arc(int beginTime, int endTime, double beginX, double endX,
                     String type, double beginY, double endY, int color) {
-        if (beginTime == endTime) {
+      /*  if (beginTime == endTime) {
             // 去掉没有判定点的蛇
             return;
         }
@@ -437,15 +189,15 @@ public class Record implements Serializable {
             arcEndTime[color] = endTime;
             arcEndX[color] = getX(beginTime, endTime, beginX, endX, type, beginY, endY, endTime);
             arcEndY[color] = getY(beginTime, endTime, beginX, endX, type, beginY, endY, endTime);
-        }
+        }*/
     }
 
     public void arctap(int beginTime, int endTime, double beginX, double endX,
                        String type, double beginY, double endY, int time) {
-        press(time, time + SettingsAndUtils.CLICK_TIME,
+        /*press(time, time + SettingsAndUtils.CLICK_TIME,
                 getX(beginTime, endTime, beginX, endX, type, beginY, endY, time) + getRandomPositionDeflection(),
                 getY(beginTime, endTime, beginX, endX, type, beginY, endY, time) + getRandomPositionDeflection());
-        clickNum++;
+        clickNum++;*/
     }
 
 

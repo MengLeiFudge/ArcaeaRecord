@@ -1,4 +1,4 @@
-package arcaea.record.base;
+package arcaea.record.record;
 
 import arcaea.record.SettingsAndUtils;
 import lombok.Data;

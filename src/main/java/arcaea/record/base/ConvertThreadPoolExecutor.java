@@ -5,7 +5,11 @@ import org.apache.commons.lang3.SerializationUtils;
 
 import java.text.DecimalFormat;
 import java.util.List;
-import java.util.concurrent.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.lang.Thread.sleep;
@@ -92,13 +96,25 @@ public class ConvertThreadPoolExecutor implements Runnable {
             if (i % SettingsAndUtils.THREAD_NUM == threadNo) {
                 AffProcess affProcess = processList.get(i);
                 Record baseRecord = new Record(affProcess.getResolution());
-                baseRecord.getNoteInfo(affProcess.getAffFile());
+                for (var note : affProcess.getAff().getNoteList()) {
+                    baseRecord.setMinTime(Math.min(baseRecord.getMinTime(), note.getT1()));
+                    baseRecord.setMaxTime(Math.max(baseRecord.getMaxTime(), note.getT2()));
+                }
+
+                // 预处理：长条与蛇代替判定、蛇头的天键，长条后面接蛇，碎蛇，等
+                // 深拷贝，根据miss和小p修改
+                // 生成脚本
+
+
+                // TODO: 搞好先后顺序
+
                 for (BaseProcess bp : affProcess.getBaseProcessList()) {
                     Record r = SerializationUtils.clone(baseRecord);
+
                     r.setTime(bp.isSongStartBegin());
-                    r.optimize(affProcess.getAffFile().getPath(), bp.getMiss(), bp.getMinPure());
-                    r.save(bp.getTargetDir(), affProcess.getSong(), affProcess.getDifficultyStr(),
-                            bp.getMiss(), bp.getMinPure(), bp.isSongStartBegin(), bp.isMirror());// 80%以上时间
+                    r.optimize(affProcess.getAff().getAffFile().getPath(), bp.miss(), bp.minPure());
+                    r.save(bp.targetDir(), affProcess.getSong(), affProcess.getDifficultyStr(),
+                            bp.miss(), bp.minPure(), bp.isSongStartBegin(), bp.isMirror());// 80%以上时间
                 }
                 synchronized (this) {
                     processedNum += affProcess.getBaseProcessList().size();

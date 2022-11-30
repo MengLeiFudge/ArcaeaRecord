@@ -1,7 +1,7 @@
 package arcaea.record.base;
 
-import arcaea.record.SettingsAndUtils;
-import arcaea.record.aff.Resolution;
+import arcaea.record.aff.Aff;
+import arcaea.record.record.Resolution;
 import lombok.Data;
 
 import java.io.File;
@@ -19,7 +19,7 @@ import java.util.List;
  */
 @Data
 public class AffProcess {
-    private final File affFile;
+    private final Aff aff;
     private final String song;
     private final String difficultyStr;
     private final Resolution resolution;

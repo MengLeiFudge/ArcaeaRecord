@@ -3,10 +3,12 @@ package arcaea.record.funcs;
 import arcaea.record.Main;
 import arcaea.record.SettingsAndUtils;
 import arcaea.record.aff.Aff;
-import arcaea.record.aff.Resolution;
 import arcaea.record.base.AffProcess;
 import arcaea.record.base.ConvertThreadPoolExecutor;
-import arcaea.record.base.MissAndMinPure;
+import arcaea.record.record.Mirror;
+import arcaea.record.record.MissAndMinPure;
+import arcaea.record.record.Resolution;
+import arcaea.record.record.RunState;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -43,8 +45,8 @@ public class AffToRecord {
     private File targetDir;
     private int minDifficulty;
     private int maxDifficulty;
-    private SettingsAndUtils.RunState runState;
-    private SettingsAndUtils.Mirror mirror;
+    private RunState runState;
+    private Mirror mirror;
     private MissAndMinPure missAndMinPure;
     private Resolution resolution;
     private final List<File> zipDirList = new ArrayList<>();
@@ -91,8 +93,8 @@ public class AffToRecord {
         affDir = SettingsAndUtils.AFF_DIR;
         minDifficulty = 2;
         maxDifficulty = 3;
-        runState = SettingsAndUtils.RunState.SONG_START_BEGIN;
-        mirror = SettingsAndUtils.Mirror.BOTH;
+        runState = RunState.SONG_START_BEGIN;
+        mirror = Mirror.BOTH;
         resolution = Resolution.R16_9_1280_720;
 
         targetDir = new File(SettingsAndUtils.VMS_DIR, "脚本/0L2%");
@@ -142,7 +144,7 @@ public class AffToRecord {
             e.printStackTrace();
         }
         minDifficulty = 0;
-        mirror = SettingsAndUtils.Mirror.ORIGIN;
+        mirror = Mirror.ORIGIN;
         missAndMinPure = new MissAndMinPure("0", "0");
         getProcessList(affDir);
 
@@ -213,15 +215,15 @@ public class AffToRecord {
         s = Main.sc.nextLine();
         switch (s) {
             case "2":
-                runState = SettingsAndUtils.RunState.FIRST_NOTE_BEGIN;
+                runState = RunState.FIRST_NOTE_BEGIN;
                 break;
             case "3":
-                runState = SettingsAndUtils.RunState.BOTH;
+                runState = RunState.BOTH;
                 break;
             case "1":
             case "":
             default:
-                runState = SettingsAndUtils.RunState.SONG_START_BEGIN;
+                runState = RunState.SONG_START_BEGIN;
         }
 
         System.out.println("选择镜像情况：");
@@ -230,15 +232,15 @@ public class AffToRecord {
         s = Main.sc.nextLine();
         switch (s) {
             case "1":
-                mirror = SettingsAndUtils.Mirror.ORIGIN;
+                mirror = Mirror.ORIGIN;
                 break;
             case "2":
-                mirror = SettingsAndUtils.Mirror.MIRROR;
+                mirror = Mirror.MIRROR;
                 break;
             case "3":
             case "":
             default:
-                mirror = SettingsAndUtils.Mirror.BOTH;
+                mirror = Mirror.BOTH;
         }
 
         System.out.println("输入单点miss数（如3）或目标分数上限（以W/w结尾，如990w）：");
@@ -246,7 +248,7 @@ public class AffToRecord {
         s = Main.sc.nextLine();
         String missStr = s.length() == 0 ? "991w" : s;
         String minPureStr = "0";
-        if (runState == SettingsAndUtils.RunState.SONG_START_BEGIN || runState == SettingsAndUtils.RunState.BOTH) {
+        if (runState == RunState.SONG_START_BEGIN || runState == RunState.BOTH) {
             System.out.println("输入小p数（如50）或小p比例（以%结尾，如5.6%）");
             System.out.println("回车表示 8%");
             s = Main.sc.nextLine();
@@ -300,7 +302,6 @@ public class AffToRecord {
             return;
         }
         String parentDirName = file.getParentFile().getName();
-        int note = new Aff(file).getNoteCount();
         String sid = parentDirName.toLowerCase(Locale.ROOT);
         if (sid.startsWith("dl_")) {
             sid = sid.substring(3);
@@ -320,49 +321,51 @@ public class AffToRecord {
                     .replaceAll("\\?", "？")
                     .replaceAll("[\\\\/:*?\"<>|]", "");
         }
+        Aff aff = new Aff(file);
+        int note = aff.getNoteCount();
         int miss = missAndMinPure.getMissNum(note);
         int minPure;
         AffProcess affProcess = null;
         for (AffProcess a : processList) {
-            if (a.getAffFile().getPath().equals(file.getPath())
+            if (a.getAff().getAffFile().getPath().equals(file.getPath())
                     && a.getResolution() == resolution) {
                 affProcess = a;
                 break;
             }
         }
         if (affProcess == null) {
-            affProcess = new AffProcess(file, songName, SettingsAndUtils.DIFFICULTY_STR[difficulty], resolution);
+            affProcess = new AffProcess(aff, songName, SettingsAndUtils.DIFFICULTY_STR[difficulty], resolution);
             processList.add(affProcess);
         }
-        File targetDir0 = targetDir == null ? affProcess.getAffFile().getParentFile() : targetDir;
-        if (runState == SettingsAndUtils.RunState.SONG_START_BEGIN || runState == SettingsAndUtils.RunState.BOTH) {
+        File targetDir0 = targetDir == null ? affProcess.getAff().getAffFile().getParentFile() : targetDir;
+        if (runState == RunState.SONG_START_BEGIN || runState == RunState.BOTH) {
             minPure = missAndMinPure.getMinPureNum(note);
-            if (mirror == SettingsAndUtils.Mirror.ORIGIN || mirror == SettingsAndUtils.Mirror.BOTH) {
+            if (mirror == Mirror.ORIGIN || mirror == Mirror.BOTH) {
                 affProcess.addBaseProcess(targetDir0, miss, minPure, true, false);
             }
-            if (mirror == SettingsAndUtils.Mirror.MIRROR || mirror == SettingsAndUtils.Mirror.BOTH) {
+            if (mirror == Mirror.MIRROR || mirror == Mirror.BOTH) {
                 affProcess.addBaseProcess(targetDir0, miss, minPure, true, true);
             }
         }
-        if (runState == SettingsAndUtils.RunState.FIRST_NOTE_BEGIN || runState == SettingsAndUtils.RunState.BOTH) {
+        if (runState == RunState.FIRST_NOTE_BEGIN || runState == RunState.BOTH) {
             minPure = 0;
-            if (mirror == SettingsAndUtils.Mirror.ORIGIN || mirror == SettingsAndUtils.Mirror.BOTH) {
+            if (mirror == Mirror.ORIGIN || mirror == Mirror.BOTH) {
                 affProcess.addBaseProcess(targetDir0, miss, minPure, false, false);
             }
-            if (mirror == SettingsAndUtils.Mirror.MIRROR || mirror == SettingsAndUtils.Mirror.BOTH) {
+            if (mirror == Mirror.MIRROR || mirror == Mirror.BOTH) {
                 affProcess.addBaseProcess(targetDir0, miss, minPure, false, true);
             }
         }
     }
 
-    private static final Pattern PATTERN = Pattern.compile("[0-9]+\\.[0-9]+\\.[0-9]+c");
+    private static final Pattern PApk = Pattern.compile("[0-9]+\\.[0-9]+\\.[0-9]+c");
 
     private void autoZip() {
         String version = null;
         File apk = SettingsAndUtils.getApk();
         if (apk != null) {
             String apkName = apk.getName();
-            Matcher matcher = PATTERN.matcher(apkName);
+            Matcher matcher = PApk.matcher(apkName);
             if (matcher.find()) {
                 version = matcher.group(0);
             }

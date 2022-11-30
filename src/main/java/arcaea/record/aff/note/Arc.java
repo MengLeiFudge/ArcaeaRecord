@@ -3,7 +3,6 @@ package arcaea.record.aff.note;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -132,5 +131,65 @@ public class Arc extends Note implements Serializable, Comparable<Note> {
         }
         int beatCount = (int) ((t2 - t1) / beatTime);
         return Math.max(beatCount + (hasHead ? 0 : -1), 1);
+    }
+
+    @Override
+    public double[] getAffPoint(int time) {
+        if (time < t1 || time > t2) {
+            throw new IllegalArgumentException("时间 " + time + " 不在 [" + t1 + ", " + t2 + "] 区间内");
+        }
+        double timeRatio = t1 == t2 ? 0.0 : (double) (time - t1) / (t2 - t1);
+        return switch (easing) {
+            case "b" -> {
+                if (timeRatio < 0.5) {
+                    yield new double[]{
+                            getP(x1, (x1 + x2) / 2, false, timeRatio * 2),
+                            getP(y1, (y1 + y2) / 2, false, timeRatio * 2),
+                    };
+                } else {
+                    yield new double[]{
+                            getP((x1 + x2) / 2, x2, true, (timeRatio - 0.5) * 2),
+                            getP((y1 + y2) / 2, y2, true, (timeRatio - 0.5) * 2),
+                    };
+                }
+            }
+            case "s" -> new double[]{
+                    x1 + (x2 - x1) * timeRatio,
+                    y1 + (y2 - y1) * timeRatio,
+            };
+            case "si" -> new double[]{
+                    getP(x1, x2, true, timeRatio),
+                    y1 + (y2 - y1) * timeRatio,
+            };
+            case "so" -> new double[]{
+                    getP(x1, x2, false, timeRatio),
+                    y1 + (y2 - y1) * timeRatio,
+            };
+            case "sisi" -> new double[]{
+                    getP(x1, x2, true, timeRatio),
+                    getP(y1, y2, true, timeRatio),
+            };
+            case "siso" -> new double[]{
+                    getP(x1, x2, true, timeRatio),
+                    getP(y1, y2, false, timeRatio),
+            };
+            case "sosi" -> new double[]{
+                    getP(x1, x2, false, timeRatio),
+                    getP(y1, y2, true, timeRatio),
+            };
+            case "soso" -> new double[]{
+                    getP(x1, x2, false, timeRatio),
+                    getP(y1, y2, false, timeRatio),
+            };
+            default -> throw new IllegalArgumentException("错误的蛇类型" + easing);
+        };
+    }
+
+    private static double getP(double pStart, double pEnd, boolean isSi, double timeRatio) {
+        // 将时间比例转换为正弦/余弦比例
+        // arc 实际使用贝塞尔曲线，使用正弦/余弦近似
+        // 0<t<1, si(t)=sin(t*pi/2), so(t)=1-cos(t*pi/2)
+        double ratioB = isSi ? Math.sin(timeRatio * Math.PI / 2) : 1 - Math.cos(timeRatio * Math.PI / 2);
+        return pStart + ratioB * (pEnd - pStart);
     }
 }

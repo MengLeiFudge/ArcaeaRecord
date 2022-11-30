@@ -9,14 +9,8 @@ import java.io.File;
  *
  * @author MengLeiFudge
  */
-@Data
-public class BaseProcess implements Comparable<BaseProcess> {
-    private final File targetDir;
-    private final int miss;
-    private final int minPure;
-    private final boolean isSongStartBegin;
-    private final boolean isMirror;
-
+public record BaseProcess(File targetDir, int miss, int minPure, boolean isSongStartBegin,
+                          boolean isMirror) implements Comparable<BaseProcess> {
     @Override
     public int compareTo(BaseProcess o) {
         if (targetDir.getPath().equals(o.targetDir.getPath())

@@ -3,8 +3,6 @@ package arcaea.record.aff.note;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
-import java.io.Serializable;
-
 import static arcaea.record.SettingsAndUtils.CLICK_TIME;
 
 /**
@@ -51,5 +49,13 @@ public class Click extends Note implements Serializable, Comparable<Note> {
     @Override
     public int getNoteCount() {
         return 1;
+    }
+
+    @Override
+    public double[] getAffPoint(int time) {
+        if (time < t1 || time > t2) {
+            throw new IllegalArgumentException("时间 " + time + " 不在 [" + t1 + ", " + t2 + "] 区间内");
+        }
+        return new double[]{lane * 0.5 - 0.75, 0};
     }
 }

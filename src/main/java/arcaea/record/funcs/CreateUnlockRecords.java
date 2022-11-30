@@ -1,11 +1,17 @@
 package arcaea.record.funcs;
 
 import arcaea.record.SettingsAndUtils;
-import arcaea.record.aff.Resolution;
+import arcaea.record.aff.Aff;
 import arcaea.record.base.AffProcess;
 import arcaea.record.base.ConvertThreadPoolExecutor;
+import arcaea.record.record.Resolution;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.ArrayList;
 
 import static arcaea.record.Main.sc;
@@ -17,7 +23,7 @@ public class CreateUnlockRecords {
     public CreateUnlockRecords() {
     }
 
-    private final File[] affFiles = new File[4];
+    private final Aff[] affs = new Aff[4];
     private File recordDir;
 
     public void process() {
@@ -41,11 +47,12 @@ public class CreateUnlockRecords {
         String s = sc.nextLine();
         File affDir = s.equals("") ? defFile : new File(s);
         for (int i = 0; i < 4; i++) {
-            affFiles[i] = new File(affDir, i + ".aff");
-            if (!affFiles[i].exists()) {
+            File affFile = new File(affDir, i + ".aff");
+            if (!affFile.exists()) {
                 System.out.println(affDir + "目录下缺少谱面文件" + i + ".aff！");
                 return false;
             }
+            affs[i] = new Aff(affFile);
         }
         System.out.println("输入要生成脚本的文件夹路径");
         defFile = new File(SettingsAndUtils.VMS_DIR, "tempestissimo解锁脚本");
@@ -58,7 +65,7 @@ public class CreateUnlockRecords {
     public void createOriginRecord() {
         ArrayList<AffProcess> processList = new ArrayList<>();
         for (int i = 0; i < 4; i++) {
-            AffProcess process = new AffProcess(affFiles[i], "Temp",
+            AffProcess process = new AffProcess(affs[i], "Temp",
                     SettingsAndUtils.DIFFICULTY_STR[i], Resolution.R16_9_1280_720);
             process.addBaseProcess(recordDir, 0, 0, true, false);
             processList.add(process);
