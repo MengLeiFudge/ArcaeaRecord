@@ -1,16 +1,9 @@
 package arc.record.record.base;
 
-import arc.record.SettingsAndUtils;
 import arc.record.record.data.SimpleAction;
 import com.alibaba.fastjson2.JSONArray;
-import com.alibaba.fastjson2.JSONObject;
-import com.alibaba.fastjson2.JSONWriter;
 
-import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.util.List;
 
 public class CreateRecord {
 

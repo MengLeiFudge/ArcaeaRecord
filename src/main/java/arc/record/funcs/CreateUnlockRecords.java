@@ -2,8 +2,6 @@ package arc.record.funcs;
 
 import arc.record.SettingsAndUtils;
 import arc.record.aff.Aff;
-import arc.record.record.base.RecordThreadPool;
-import arc.record.record.data.Resolution;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -11,7 +9,6 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.util.ArrayList;
 
 import static arc.record.Main.sc;
 import static arc.record.SettingsAndUtils.DIFFICULTY_STR;

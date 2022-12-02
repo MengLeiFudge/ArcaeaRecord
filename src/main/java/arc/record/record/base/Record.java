@@ -1,12 +1,9 @@
 package arc.record.record.base;
 
 import arc.record.SettingsAndUtils;
-import arc.record.record.data.Resolution;
 import arc.record.record.data.SimpleAction;
 import arc.record.record.data.TouchIdManager;
 import com.alibaba.fastjson2.JSONArray;
-import com.alibaba.fastjson2.JSONObject;
-import com.alibaba.fastjson2.JSONWriter;
 import lombok.Data;
 
 import java.io.BufferedWriter;
@@ -15,9 +12,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
 
 /**
  * 谱面数据结构.

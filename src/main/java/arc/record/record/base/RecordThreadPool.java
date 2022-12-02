@@ -5,13 +5,9 @@ import arc.record.aff.note.Note;
 import arc.record.record.data.SimpleAction;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.alibaba.fastjson2.JSONWriter;
 import org.apache.commons.lang3.SerializationUtils;
 
-import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
@@ -161,11 +157,17 @@ public class RecordThreadPool implements Runnable {
 
     /**
      * 预处理按键列表.
-     *
+     * <p>
      * 需要处理如下特殊键型：
-     * <
-     * ，如长条与蛇代替判定、蛇头的天键，长条后面接蛇，碎蛇，蛇中间加单点...等等
-     * @param noteList
+     * <ul>
+     *     <li>碎蛇 -> 改为连续的蛇</li>
+     *     <li>位于蛇头的天键 -> 改为去掉天键，蛇头移动到天键</li>
+     *     <li>长条后面接蛇 -> 长条改为蛇，与后面蛇连接</li>
+     *     <li>蛇中间有单点 -> 好像并不需要额外处理</li>
+     *     <li>蛇位于长条上方 -> 这一段长条不需要按</li>
+     * </ul>
+     *
+     * @param noteList 要处理的按键列表
      */
     private static void preProcess(List<Note> noteList) {
 
@@ -174,7 +176,6 @@ public class RecordThreadPool implements Runnable {
     private static void modifyMissAndMinPure(List<Note> noteList, int miss, int minPure) {
 
     }
-
 
     private static List<JSONObject> getNoteOperationList(List<Note> noteList) {
         /*for (int i = 0; i < simpleActions.size(); i++) {

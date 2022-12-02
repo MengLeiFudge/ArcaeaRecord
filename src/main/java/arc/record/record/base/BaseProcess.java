@@ -9,11 +9,6 @@ import java.io.File;
  *
  * @author MengLeiFudge
  */
-public record BaseProcess(
-        File targetDir,
-        int miss,
-        int minPure,
-        boolean isSongStartBegin,
-        boolean isMirror,
-        Resolution resolution) {
+public record BaseProcess(String songName, String diffStr, File targetDir, int miss, int minPure,
+                          boolean isSongStartBegin, boolean isMirror, Resolution resolution) {
 }
