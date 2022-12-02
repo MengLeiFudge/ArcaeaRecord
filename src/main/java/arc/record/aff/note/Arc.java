@@ -1,4 +1,4 @@
-package arcaea.record.aff.note;
+package arc.record.aff.note;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -11,27 +11,27 @@ import java.util.List;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class Arc extends Note implements Serializable, Comparable<Note> {
-    double x1;
-    double x2;
-    String easing;
-    double y1;
-    double y2;
-    int color;
-    boolean skylineBoolean;
+public class Arc extends Note {
+    final double x1;
+    final double x2;
+    final String easing;
+    final double y1;
+    final double y2;
+    final int color;
+    final boolean skylineBoolean;
     /**
      * 存放所有的 arctap.
      */
-    List<Integer> arctapList = new ArrayList<>();
+    final List<Integer> arctapList = new ArrayList<>();
     /**
      * 指示该蛇是否具有头判定.
      */
     boolean hasHead = false;
 
     public Arc(String line) {
-        skylineBoolean = line.contains("arctap");
+        boolean skyline = line.contains("arctap");
         String[] data;
-        if (!skylineBoolean) {
+        if (!skyline) {
             data = line.substring("arc(".length(), line.length() - 2).split(",");
         } else {
             data = line.substring("arc(".length(), line.indexOf(")[")).split(",");
@@ -45,10 +45,12 @@ public class Arc extends Note implements Serializable, Comparable<Note> {
         y2 = Double.parseDouble(data[6]);
         color = Integer.parseInt(data[7]);
         // data[8] 是打击音效，无用
-        if (!skylineBoolean) {
+        if (!skyline) {
             // 不含天键情况下，蛇可能为黑线；含天键情况下，必定为黑线
             skylineBoolean = Boolean.parseBoolean(data[9]);
             return;
+        } else {
+            skylineBoolean = true;
         }
         data = line.substring(line.indexOf(")[") + 2, line.length() - 2).split(",");
         for (var x : data) {
