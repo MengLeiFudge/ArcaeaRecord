@@ -1,6 +1,9 @@
 package arc.record.record.base;
 
 import arc.record.aff.Aff;
+import arc.record.aff.note.Arc;
+import arc.record.aff.note.ArcTap;
+import arc.record.aff.note.Click;
 import arc.record.aff.note.Note;
 import arc.record.record.data.SimpleAction;
 import com.alibaba.fastjson2.JSONArray;
@@ -10,6 +13,7 @@ import org.apache.commons.lang3.SerializationUtils;
 import java.io.File;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -166,7 +170,39 @@ public class RecordThreadPool implements Runnable {
      *     <li>蛇中间有单点 -> 好像并不需要额外处理</li>
      *     <li>蛇位于长条上方 -> 这一段长条不需要按</li>
      * </ul>
-     *
+     */
+    static class PreProcess {
+        public static void connectArc(List<Note> noteList) {
+            Map<Integer, List<Arc>> arcs = new HashMap<>();
+            noteList.stream()
+                    .filter(n -> n instanceof Arc)
+                    .map(n -> (Arc) n)
+                    .forEachOrdered(n -> {
+                        if (arcs.containsKey(n.getColor())) {
+                            arcs.get(n.getColor()).add(n);
+                        } else {
+                            List<Arc> list = new ArrayList<>();
+                            list.add(n);
+                            arcs.put(n.getColor(), list);
+                        }
+                    });
+            //TODO:连接碎蛇
+        }
+
+        public static void headClick(List<Note> noteList) {
+            //TODO:同上
+        }
+
+        public static void arcAfterHold(List<Note> noteList) {
+            //TODO:同上
+        }
+
+        public static void arcOnHold(List<Note> noteList) {
+            //TODO:不同上
+        }
+    }
+
+    /**
      * @param noteList 要处理的按键列表
      */
     private static void preProcess(List<Note> noteList) {

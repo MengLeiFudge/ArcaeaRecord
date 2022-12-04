@@ -398,7 +398,7 @@ public class Record implements Serializable {
                     boolean shouldMissThisNote = false;
                     // 判断是否需要miss该按键
                     // 思路是从后往前均匀分布 miss，但是前面可能出现一段都没有合适的按键可以 miss 的情况
-                    // 这里使用 10% - 100% 这一段均匀分布所有 miss，以确保 miss 达标
+                    // 这里d使用 10% - 100% 这一段均匀分布所有 miss，以确保 miss 达标
                     if (missNum < miss && processedNum >= missNum * clickNum * 0.9 / miss) {
                         shouldMissThisNote = true;
                         // 避免冲突，若该按键后一定时间内有紧跟的键，则该键不能miss
