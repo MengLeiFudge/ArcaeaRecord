@@ -36,4 +36,15 @@ public abstract class Note implements Serializable, Comparable<Note> {
      * @return 转换后的谱面坐标 x, y
      */
     public abstract double[] getAffPoint(int time);
+
+    @Override
+    public int compareTo(Note o) {
+        if (t1 != o.t1) {
+            return t1 - o.t1;
+        }
+        if (t2 != o.t2) {
+            return t2 - o.t2;
+        }
+        return 0;
+    }
 }

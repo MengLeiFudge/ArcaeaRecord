@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Locale;
 
 /**
  * 设定 arc 文件夹的位置，以及其他参数.
@@ -93,6 +94,9 @@ public class SettingsAndUtils {
 
     /**
      * 根据输入的 sid，返回对应的歌曲英文名.
+     *
+     * @param sid 要查找歌曲名的歌曲 id
+     * @return 如果 SONG_LIST 文件中包含该歌曲，返回英文歌曲名；否则返回 null
      */
     public static String getTitleLocalizedEN(String sid) {
         if (!SONG_MAP.containsKey(sid)) {
@@ -111,6 +115,25 @@ public class SettingsAndUtils {
             }
         }
         return SONG_MAP.get(sid);
+    }
+
+    /**
+     * 根据输入的 sid，返回对应的歌曲英文名.
+     *
+     * @param sid 要查找歌曲名的歌曲 id
+     * @return 如果 SONG_LIST 文件中包含该歌曲，返回英文歌曲名；否则返回 null
+     */
+    public static String getProcessedTitle(String sid) {
+        String songName = getTitleLocalizedEN(sid);
+        if (songName == null) {
+            return sid;
+        }
+        // 雷电模拟器脚本按照先大写再小写排序，很不方便，这里全部改成小写
+        // Windows 文件名不能有 \/:*?"<>| 这些字符，将其全部替换为空格
+        return songName.toLowerCase(Locale.ROOT)
+                .replaceAll(":", "：")
+                .replaceAll("\\?", "？")
+                .replaceAll("[\\\\/:*?\"<>|]", "");
     }
 
     public static final String[] DIFFICULTY_STR = {"PST", "PRS", "FTR", "BYD"};

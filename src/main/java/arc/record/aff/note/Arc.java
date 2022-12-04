@@ -22,7 +22,7 @@ public class Arc extends Note {
     /**
      * 存放所有的 arctap.
      */
-    final List<Integer> arctapList = new ArrayList<>();
+    final List<Integer> arctapTimingList = new ArrayList<>();
     /**
      * 指示该蛇是否具有头判定.
      */
@@ -55,53 +55,8 @@ public class Arc extends Note {
         data = line.substring(line.indexOf(")[") + 2, line.length() - 2).split(",");
         for (var x : data) {
             x = x.replaceAll("arctap\\(|\\)", "");
-            arctapList.add(Integer.parseInt(x));
+            arctapTimingList.add(Integer.parseInt(x));
         }
-    }
-
-    @Override
-    public int compareTo(Note o) {
-        if (o instanceof Click oClick) {
-            if (t1 != oClick.t1) {
-                return t1 - oClick.t1;
-            }
-            return 1;
-        }
-        if (o instanceof Hold oHold) {
-            if (t1 != oHold.t1) {
-                return t1 - oHold.t1;
-            }
-            return 1;
-        }
-        if (o instanceof Arc oArc) {
-            if (t1 != oArc.t1) {
-                return t1 - oArc.t1;
-            }
-            if (t2 != oArc.t2) {
-                return t2 - oArc.t2;
-            }
-            //蛇在前，天键在后
-            if (skylineBoolean != oArc.skylineBoolean) {
-                return skylineBoolean ? 1 : -1;
-            }
-            if (color != oArc.color) {
-                return color - oArc.color;
-            }
-            if (x1 != oArc.x1) {
-                return x1 - oArc.x1 > 0 ? 1 : -1;
-            }
-            if (x2 != oArc.x2) {
-                return x2 - oArc.x2 > 0 ? 1 : -1;
-            }
-            if (y1 != oArc.y1) {
-                return y1 - oArc.y1 > 0 ? 1 : -1;
-            }
-            if (y2 != oArc.y2) {
-                return y2 - oArc.y2 > 0 ? 1 : -1;
-            }
-            return easing.compareTo(oArc.easing);
-        }
-        throw new IllegalArgumentException("无法比较 " + this.getClass() + " 与 " + o.getClass());
     }
 
     /**
@@ -122,8 +77,8 @@ public class Arc extends Note {
      */
     @Override
     public int getNoteCount() {
-        if (arctapList.size() > 0) {
-            return arctapList.size();
+        if (arctapTimingList.size() > 0) {
+            return arctapTimingList.size();
         }
         if (skylineBoolean) {
             return 0;
@@ -193,5 +148,13 @@ public class Arc extends Note {
         // 0<t<1, si(t)=sin(t*pi/2), so(t)=1-cos(t*pi/2)
         double ratioB = isSi ? Math.sin(timeRatio * Math.PI / 2) : 1 - Math.cos(timeRatio * Math.PI / 2);
         return pStart + ratioB * (pEnd - pStart);
+    }
+
+    public List<ArcTap> getArcTapList() {
+        List<ArcTap> list = new ArrayList<>();
+        for (var time : arctapTimingList) {
+            list.add(new ArcTap(getAffPoint(time), time));
+        }
+        return list;
     }
 }

@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONArray;
 
 import java.io.File;
 
+@Deprecated
 public class CreateRecord {
 
     /*-- 生成脚本 --*/

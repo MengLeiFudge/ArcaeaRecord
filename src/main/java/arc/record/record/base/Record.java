@@ -20,6 +20,7 @@ import java.util.Collections;
  * @author MengLeiFudge
  */
 @Data
+@Deprecated
 public class Record implements Serializable {
     /**
      * 谱面按键时间最小值.

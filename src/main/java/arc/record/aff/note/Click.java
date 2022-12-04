@@ -24,29 +24,6 @@ public class Click extends Note {
     }
 
     @Override
-    public int compareTo(Note o) {
-        if (o instanceof Click oClick) {
-            if (t1 != oClick.t1) {
-                return t1 - oClick.t1;
-            }
-            return lane - oClick.lane;
-        }
-        if (o instanceof Hold oHold) {
-            if (t1 != oHold.t1) {
-                return t1 - oHold.t1;
-            }
-            return -1;
-        }
-        if (o instanceof Arc oArc) {
-            if (t1 != oArc.t1) {
-                return t1 - oArc.t1;
-            }
-            return -1;
-        }
-        throw new IllegalArgumentException("无法比较 " + this.getClass() + " 与 " + o.getClass());
-    }
-
-    @Override
     public int getNoteCount() {
         return 1;
     }

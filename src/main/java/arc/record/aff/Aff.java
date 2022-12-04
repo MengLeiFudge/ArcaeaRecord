@@ -1,6 +1,7 @@
 package arc.record.aff;
 
 import arc.record.aff.note.Arc;
+import arc.record.aff.note.ArcTap;
 import arc.record.aff.note.Click;
 import arc.record.aff.note.Hold;
 import arc.record.aff.note.Note;
@@ -18,6 +19,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import static arc.record.SettingsAndUtils.DIFFICULTY_STR;
+import static arc.record.SettingsAndUtils.getTitleLocalizedEN;
+
 /**
  * 谱面文件信息类，具体规则参考中文wiki的谱面格式页面（问题答案为ifi）.
  *
@@ -28,7 +32,17 @@ public class Aff {
     /**
      * 谱面文件对象.
      */
-    private File affFile;
+    private final File affFile;
+
+    /**
+     * 歌曲名.
+     */
+    private final String songName;
+
+    /**
+     * 歌曲难度.
+     */
+    private final String diffStr;
 
     /**
      * 音频偏移.
@@ -46,7 +60,7 @@ public class Aff {
      * <p>
      * y=1时效果与省略此行相同。
      */
-    private double timingPointDensityFactor = 1;
+    private float timingPointDensityFactor = 1;
 
     /**
      * 按键列表.
@@ -79,6 +93,13 @@ public class Aff {
 
     public Aff(File affFile) {
         this.affFile = affFile;
+        String sid = affFile.getParentFile().getName();
+        if (sid.startsWith("dl_")) {
+            sid = sid.substring(3);
+        }
+        String songName = getTitleLocalizedEN(sid);
+        this.songName = songName == null ? sid : songName;
+        this.diffStr = DIFFICULTY_STR[Integer.parseInt(affFile.getName().substring(0, 1))];
         readAffAndPreProcess();
     }
 
@@ -99,7 +120,7 @@ public class Aff {
                 if (line.startsWith("AudioOffset:")) {
                     audioOffset = Integer.parseInt(line.substring("AudioOffset:".length()));
                 } else if (line.startsWith("TimingPointDensityFactor:")) {
-                    timingPointDensityFactor = Double.parseDouble(line.substring("TimingPointDensityFactor:".length()));
+                    timingPointDensityFactor = Float.parseFloat(line.substring("TimingPointDensityFactor:".length()));
                 }
             }
             // 创建两个 timingGroup
@@ -131,13 +152,17 @@ public class Aff {
                     } else if (P_ARC.matcher(line).matches()) {
                         Arc arc = new Arc(line);
                         // 不处理黑线
-                        if (arc.getArctapList().isEmpty() && arc.isSkylineBoolean()) {
+                        if (arc.getArctapTimingList().isEmpty() && arc.isSkylineBoolean()) {
                             continue;
                         }
-                        currTimingGroup.noteList.add(arc);
-                        // 蛇需要添加到arcList中
-                        if (!arc.isSkylineBoolean()) {
+                        if (arc.isSkylineBoolean()) {
+                            // 多个天键
+                            List<ArcTap> arcTapList = arc.getArcTapList();
+                            currTimingGroup.noteList.addAll(arcTapList);
+                        } else {
+                            // 蛇需要添加到arcList中
                             arcList.add(arc);
+                            currTimingGroup.noteList.add(arc);
                         }
                     } else if (P_TIMING.matcher(line).matches()) {
                         Timing timing = new Timing(line);

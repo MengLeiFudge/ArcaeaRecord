@@ -16,7 +16,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
@@ -63,15 +62,17 @@ public class RecordThreadPool implements Runnable {
      *
      * @param processMap 处理需求
      */
-    public static synchronized void process(Map<File, List<BaseProcess>> processMap) {
+    public static synchronized void process(Map<File, Map<Integer, List<Request>>> processMap) {
         long startTime = System.currentTimeMillis();
         // 初始化数据，判断是否需要处理
         RecordThreadPool.processMap = processMap;
         processFileList = processMap.keySet().stream().toList();
         processedNum = 0;
         int targetNum = 0;
-        for (var list : processMap.values()) {
-            targetNum += list.size();
+        for (var map : processMap.values()) {
+            for (var list : map.values()) {
+                targetNum += list.size();
+            }
         }
         if (targetNum == 0) {
             System.out.println("没有需要生成的脚本！");
@@ -109,7 +110,7 @@ public class RecordThreadPool implements Runnable {
     }
 
     private final int threadNo;
-    private static Map<File, List<BaseProcess>> processMap;
+    private static Map<File, Map<Integer, List<Request>>> processMap;
     private static List<File> processFileList;
     private static int processedNum;
     private static final DecimalFormat df = new DecimalFormat("0.00%");
@@ -124,36 +125,24 @@ public class RecordThreadPool implements Runnable {
             if (i % THREAD_NUM == threadNo) {
                 File affFile = processFileList.get(i);
                 Aff aff = new Aff(affFile);
-                List<BaseProcess> processList = processMap.get(affFile);
+                Map<Integer, List<Request>> map = processMap.get(affFile);
                 // 预处理，如长条与蛇代替判定、蛇头的天键，长条后面接蛇，碎蛇，蛇中间加单点...等等
                 ArrayList<Note> baseNoteList = (ArrayList<Note>) aff.getNoteList();
                 preProcess(baseNoteList);
-                // 根据 miss、小p 的数目，将处理要求分组
-                Map<Integer, List<BaseProcess>> map = new ConcurrentHashMap<>();
-                for (var p : processList) {
-                    int key = p.miss() * (aff.getNoteCount() + 1) + p.minPure();
-                    if (map.containsKey(key)) {
-                        map.get(key).add(p);
-                    } else {
-                        List<BaseProcess> list = new ArrayList<>();
-                        list.add(p);
-                        map.put(key, list);
-                    }
-                }
-                // 每组都应有唯一的 noteList
+                // 根据 miss、小p 的数目，分别构建新的 noteList 并处理
                 for (var x : map.keySet()) {
-                    int miss = map.get(x).get(0).miss();
-                    int minPure = map.get(x).get(0).minPure();
+                    int miss = x / (aff.getNoteCount() + 1);
+                    int noShinyPure = x % (aff.getNoteCount() + 1);
                     ArrayList<Note> noteList = SerializationUtils.clone(baseNoteList);
                     // 通过 miss、小p 构建唯一的 noteList
-                    modifyMissAndMinPure(noteList, miss, minPure);
+                    modifyMP(noteList, miss, noShinyPure);
                     // 遍历要求，生成脚本
                     for (var p : map.get(x)) {
                         saveRecord(noteList, p);
                     }
-                }
-                synchronized (this) {
-                    processedNum += processList.size();
+                    synchronized (RecordThreadPool.class) {
+                        processedNum += map.size();
+                    }
                 }
             }
         }
@@ -206,11 +195,39 @@ public class RecordThreadPool implements Runnable {
      * @param noteList 要处理的按键列表
      */
     private static void preProcess(List<Note> noteList) {
-
+        PreProcess.connectArc(noteList);
+        PreProcess.headClick(noteList);
+        PreProcess.arcAfterHold(noteList);
+        PreProcess.arcOnHold(noteList);
     }
 
-    private static void modifyMissAndMinPure(List<Note> noteList, int miss, int minPure) {
+    /**
+     * @param noteList
+     * @param miss
+     * @param minPure
+     */
+    private static void modifyMP(List<Note> noteList, int miss, int minPure) {
+        //clicks 是 noteList 中所有的地键和天键
+        //newClick 中去除了时间和位置上过于接近的note
+        List<Note> clicks = noteList.stream().filter(n -> n instanceof Click || n instanceof ArcTap).toList();
+        List<Note> newClicks = new ArrayList<>();
+        for (int i = 0; i < clicks.size() - 1; i++) {
+            double[] xy1 = clicks.get(i).getAffPoint(clicks.get(i).getT1());
+            double[] xy2 = clicks.get(i + 1).getAffPoint(clicks.get(i + 1).getT1());
+            double dis = Math.abs(xy1[0] - xy2[0]) + Math.abs(xy1[1] - xy2[1]);
+            if (clicks.get(i + 1).getT1() - clicks.get(i).getT1() > 300 || dis > 0.3) {
+                newClicks.add(clicks.get(i));
+            }
+        }
+        //确保 miss 不超过铺面 note 数，minPure 不超过剩余键数
+        miss = Math.min(miss, newClicks.size());
+        noteList.removeAll(newClicks.subList(0, miss));
 
+        minPure = Math.min((int) (1.2 * minPure), newClicks.size() - miss);
+        for (int i = miss; i < miss + minPure; i++) {
+            newClicks.get(i).setT1(newClicks.get(i).getT1() + 40);
+            newClicks.get(i).setT2(newClicks.get(i).getT2() + 40);
+        }
     }
 
     private static List<JSONObject> getNoteOperationList(List<Note> noteList) {
@@ -236,7 +253,7 @@ public class RecordThreadPool implements Runnable {
         return new ArrayList<>();
     }
 
-    private static void saveRecord(List<Note> noteList, BaseProcess p) {
+    private static void saveRecord(List<Note> noteList, Request p) {
         /*JSONArray operationsArray = new JSONArray();
         // 写入 PreSimpleActions，即暂停、继续那些操作
         if (haveBegin) {
@@ -309,7 +326,7 @@ public class RecordThreadPool implements Runnable {
         }*/
     }
 
-    private void add(JSONArray points, SimpleAction simpleAction, boolean mirror) {
+    private static void add(JSONArray points, SimpleAction simpleAction, boolean mirror) {
         /*JSONObject obj = new JSONObject();
         obj.put("id", simpleAction.getId());
         obj.put("x", mirror ? resolution.getMaxX() - simpleAction.getX() : simpleAction.getX());

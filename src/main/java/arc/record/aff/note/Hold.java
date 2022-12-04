@@ -21,32 +21,6 @@ public class Hold extends Note {
         lane = Integer.parseInt(data[2]);
     }
 
-    @Override
-    public int compareTo(Note o) {
-        if (o instanceof Click oClick) {
-            if (t1 != oClick.t1) {
-                return t1 - oClick.t1;
-            }
-            return 1;
-        }
-        if (o instanceof Hold oHold) {
-            if (t1 != oHold.t1) {
-                return t1 - oHold.t1;
-            }
-            if (t2 != oHold.t2) {
-                return t2 - oHold.t2;
-            }
-            return lane - oHold.lane;
-        }
-        if (o instanceof Arc oArc) {
-            if (t1 != oArc.t1) {
-                return t1 - oArc.t1;
-            }
-            return -1;
-        }
-        throw new IllegalArgumentException("无法比较 " + this.getClass() + " 与 " + o.getClass());
-    }
-
     /**
      * 返回 note 总数.
      * <p>
