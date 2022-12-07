@@ -67,6 +67,8 @@ public class AffToRecord {
         String s = sc.nextLine();
         if ("".equals(s)) {
             auto();
+        } else if (".".equals(s)) {
+            test();
         } else {
             diy();
         }
@@ -156,6 +158,22 @@ public class AffToRecord {
         }
         maxDifficulty = 1;
         zipDirList.add(targetDir);
+        addRequests(affDir);
+    }
+
+    private void test() {
+        affDir = AFF_DIR;
+        minDifficulty = 3;
+        maxDifficulty = 3;
+        mirror = Mirror.ORIGIN;
+        resolution = Resolution.R16_9_1280_720;
+        missAndMinPure = new MissAndMinPure("0", "0");
+        targetDir = VMS_DIR;
+        try {
+            targetDir = targetDir.getCanonicalFile();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
         addRequests(affDir);
     }
 

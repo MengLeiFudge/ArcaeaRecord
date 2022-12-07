@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 import static arc.record.SettingsAndUtils.DIFFICULTY_STR;
-import static arc.record.SettingsAndUtils.getTitleLocalizedEN;
+import static arc.record.SettingsAndUtils.getProcessedTitle;
 
 /**
  * 谱面文件信息类，具体规则参考中文wiki的谱面格式页面（问题答案为ifi）.
@@ -102,8 +102,7 @@ public class Aff {
         if (sid.startsWith("dl_")) {
             sid = sid.substring(3);
         }
-        String songName = getTitleLocalizedEN(sid);
-        this.songName = songName == null ? sid : songName;
+        this.songName = getProcessedTitle(sid);
         this.diffStr = DIFFICULTY_STR[Integer.parseInt(affFile.getName().substring(0, 1))];
         readAffAndPreProcess();
     }

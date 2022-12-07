@@ -29,7 +29,7 @@ public abstract class Note implements Serializable, Comparable<Note> {
     /**
      * 根据按键所在 timing 的 bpm 计算的判定块间隔.
      */
-    float beatTime;
+    float beatTime = 0;
 
     /**
      * 返回该键型对应的总 note 数.
@@ -65,22 +65,22 @@ public abstract class Note implements Serializable, Comparable<Note> {
     /**
      * 初始化该 note 对应的所有操作.
      *
-     * @param manager 管理作的实例对象
+     * @param actionUnionFind 管理作的实例对象
      */
-    public void initActions(UnionFind<Action> manager) {
+    public void initActions(UnionFind<Action> actionUnionFind) {
         if (actionDownList != null) {
             return;
         }
         actionDownList = new ArrayList<>();
         double[] xy;
         // beatTime除以2是为了确保不会miss
-        for (float t = t1; t < t2; t += beatTime / 2) {
+        for (float t = t1; t < t2; t += beatTime / 4) {
             xy = getAffPoint((int) t);
             actionDownList.add(new Action(xy[0], xy[1], (int) t));
         }
         xy = getAffPoint(t2);
         actionUp = new Action(xy[0], xy[1], t2);
-        manager.add(getActions());
+        actionUnionFind.add(getActions());
     }
 
     public List<Action> getActions() {

@@ -12,6 +12,8 @@ import java.util.Objects;
  * 动态大小，并查集.
  * <p>
  * 输入同一个类的两个对象，输出这两个对象是否具有关联。
+ *
+ * @author MengLeiFudge
  */
 public class UnionFind<T> {
     /**

@@ -76,7 +76,7 @@ public class RecordThreadPool implements Runnable {
      *
      * @param processMap 处理需求
      */
-    public static synchronized void process(Map<File, Map<Integer, List<Request>>> processMap) {
+    public static void process(Map<File, Map<Integer, List<Request>>> processMap) {
         long startTime = System.currentTimeMillis();
         // 初始化数据，判断是否需要处理
         RecordThreadPool.processMap = processMap;
@@ -113,7 +113,7 @@ public class RecordThreadPool implements Runnable {
             Thread.currentThread().interrupt();
         }
         // 处理完毕，输出处理时间
-        System.out.println("已完成 " + df.format((double) processedNum / targetNum));
+        System.out.println("转换进度：" + df.format((double) processedNum / targetNum));
         long endTime = System.currentTimeMillis() - startTime;
         String minuteStr = endTime >= 60000 ? " " + (int) (endTime / 60000) + " min" : "";
         endTime %= 60000;
@@ -134,7 +134,7 @@ public class RecordThreadPool implements Runnable {
     }
 
     /**
-     * // 1.修改note列表，例如长条与蛇交互的处理、miss/小p的数目
+     * // 1.修改note列表，例如长条与蛇判定重合的处理、miss/小p的数目
      * // 2.构建一个ActionManager对象，初始化所有note
      * // 3.使用Note.mergeNotes(Note a, Note b)合并两个note，
      * // 需要处理各个note的list -> note a的保留，b的改为空，全部加到a中，然后排序？
@@ -159,15 +159,15 @@ public class RecordThreadPool implements Runnable {
                     int noShinyPure = x % (aff.getNoteCount() + 1);
                     List<Note> noteList = SerializationUtils.clone((ArrayList<Note>) baseNoteList);
                     modifyMP(noteList, miss, noShinyPure);
-                    UnionFind<Action> manager = new UnionFind<>();
+                    UnionFind<Action> actionUnionFind = new UnionFind<>();
                     for (var note : noteList) {
-                        note.initActions(manager);
+                        note.initActions(actionUnionFind);
                     }
-                    mergeArcAndArc(noteList, manager);
-                    mergeClickAndArc(noteList, manager);
-                    mergeArcAndHold(noteList, manager);
+                    mergeArcAndArc(noteList, actionUnionFind);
+                    mergeClickAndArcStart(noteList, actionUnionFind);
+                    mergeHoldEndAndArcStart(noteList, actionUnionFind);
                     for (var p : map.get(x)) {
-                        saveRecord(noteList, p);
+                        saveRecord(aff, noteList, actionUnionFind, miss, noShinyPure, p);
                     }
                     synchronized (RecordThreadPool.class) {
                         processedNum += map.size();
@@ -183,26 +183,122 @@ public class RecordThreadPool implements Runnable {
      * 如果检测到符合要求的键型，应将长条拆分为多个。
      * <p>
      * 显然一个 list 无法描述一个 hold 的多次抬起与按下的操作，所以需要创建新的 hold，且该处理要在连接 note 之前。
+     * <p>
+     * 假设 y<0.5 时，蛇判定可以替代长条。
+     * 前提：对于任意的Arc（代码里面的Arc对象），一定是单调的。也就是说，一个Arc只有至多一段时间满足y<0.5。
+     * 步骤如下：
+     * 1.如果蛇的开始y、结束y都大于0.5，去掉
+     * 2.对于指定的hold，遍历与其相关的arc
+     * 3.根据蛇的【所有判定点位置】，找到x在长条范围内且y<0.5的时间段（至多有一个），暂存这个时间段
+     * ps: 考虑到actionList生成的时候是使用beatTime/2作为间隔，找蛇的判定点间隔也用这个
+     * 4.把所有的暂存时间段进行合并，并进行排序
+     * eg: 蓝色在1-3s，红蛇在2-4s，则1-4s都应该去掉
+     * 5.根据排好序的时间列表，拆分hold为多个新的hold
+     * 【拆分是否要以长条判定点为基准，还是直接以拆分结果为基准？以拆分结果为基准。】
      *
      * @param noteList 要处理的按键列表
      */
     private void optimizeArcOnHold(List<Note> noteList) {
-        // 筛选出所有 hold
-        List<Hold> holds = new ArrayList<>();
-        noteList.stream()
+        // todo: 0.5改成46k影响
+        List<Arc> arcs = new ArrayList<>(noteList.stream()
+                .filter(o -> o instanceof Arc arc
+                        && arc.getY1() < 0.5
+                        && arc.getY2() < 0.5).map(o -> (Arc) o)
+                .toList());
+        List<Hold> holds = noteList.stream()
                 .filter(o -> o instanceof Hold).map(o -> (Hold) o)
-                .forEachOrdered(holds::add);
+                .toList();
         for (var hold : holds) {
-            // 筛选出所有与该 hold 时间段有关的蛇
-            List<Arc> arcs = new ArrayList<>();
-            noteList.stream()
-                    .filter(o -> o instanceof Arc arc
-                            && arc.getT2() > hold.getT1()
-                            && arc.getT1() < hold.getT2()).map(o -> (Arc) o)
-                    .forEachOrdered(arcs::add);
-            for (var arc : arcs) {
-                // todo: 如何处理
+            arcs.removeIf(arc -> arc.getT2() <= hold.getT1());
+            // 找到所有时间可能符合要求的Arc
+            List<Arc> candidateArcs = arcs.stream().filter(arc -> hold.getT2() > arc.getT1()).toList();
+            if (candidateArcs.isEmpty()) {
+                continue;
             }
+            // 长条判定区
+            double minX = hold.getLane() * 0.5 - 1;
+            double maxX = hold.getLane() * 0.5 - 0.5;
+            double[] xy;
+            Map<Integer, Integer> timeMap = new HashMap<>();
+            for (var arc : candidateArcs) {
+                List<Integer> times = new ArrayList<>();
+                boolean isEndOk = false;
+                for (float t = arc.getT1(); t < arc.getT2(); t += arc.getBeatTime() / 4) {
+                    xy = arc.getAffPoint((int) t);
+                    if (xy[0] > minX && xy[0] < maxX && xy[1] < 0.5) {
+                        times.add((int) t);
+                        isEndOk = true;
+                    } else {
+                        isEndOk = false;
+                    }
+                }
+                if (isEndOk) {
+                    times.add(arc.getT2());
+                }
+                if (times.size() < 2) {
+                    continue;
+                }
+                int startTime = times.get(0);
+                int endTime = times.get(times.size() - 1);
+                if (startTime >= endTime) {
+                    continue;
+                }
+                boolean input = false;
+                for (var x : timeMap.entrySet()) {
+                    if (!(x.getKey() > endTime && x.getValue() < startTime)) {
+                        timeMap.remove(x.getKey());
+                        timeMap.put(Math.min(x.getKey(), startTime), Math.max(x.getValue(), endTime));
+                        input = true;
+                        break;
+                    }
+                }
+                if (!input) {
+                    timeMap.put(startTime, endTime);
+                }
+            }
+            if (timeMap.isEmpty()) {
+                continue;
+            }
+            List<Integer> startTimeList = new ArrayList<>(timeMap.keySet().stream().toList());
+            Collections.sort(startTimeList);
+            for (var x : startTimeList) {
+                int key = Math.max(hold.getT1(), x);
+                int value = Math.min(hold.getT2(), timeMap.get(x));
+                timeMap.remove(x);
+                if (key != value) {
+                    timeMap.put(key, value);
+                }
+            }
+            if (timeMap.isEmpty()) {
+                continue;
+            }
+            startTimeList = new ArrayList<>(timeMap.keySet().stream().toList());
+            Collections.sort(startTimeList);
+            List<Hold> newHolds = new ArrayList<>();
+            int firstStartTime = startTimeList.get(0);
+            if (firstStartTime != hold.getT1()) {
+                Hold newHold = SerializationUtils.clone(hold);
+                newHold.setT2(Math.max(hold.getT1() + CLICK_TIME, firstStartTime));
+                newHolds.add(newHold);
+            } else {
+                Hold newHold = SerializationUtils.clone(hold);
+                newHold.setT2(hold.getT1() + CLICK_TIME);
+                newHolds.add(newHold);
+            }
+            for (int i = 0; i < startTimeList.size() - 1; i++) {
+                Hold newHold = SerializationUtils.clone(hold);
+                newHold.setT1(timeMap.get(startTimeList.get(i)));
+                newHold.setT2(startTimeList.get(i + 1));
+                newHolds.add(newHold);
+            }
+            int lastEndTime = timeMap.get(startTimeList.get(startTimeList.size() - 1));
+            if (lastEndTime != hold.getT2()) {
+                Hold newHold = SerializationUtils.clone(hold);
+                newHold.setT1(lastEndTime);
+                newHolds.add(newHold);
+            }
+            noteList.remove(hold);
+            noteList.addAll(newHolds);
         }
     }
 
@@ -217,7 +313,7 @@ public class RecordThreadPool implements Runnable {
         // 由于偏移也不一定小p（模拟器原因，执行时间有偏差），这里适当增加小p数
         // noShinyPure *= 1.8;
         // 获取 noteList 中所有的地键和天键，只有单点会被修改
-        List<Note> clicks = noteList.stream().filter(n -> n instanceof Click || n instanceof ArcTap).toList();
+        List<Note> clicks = noteList.stream().filter(o -> o instanceof Click || o instanceof ArcTap).toList();
         // 暂存将会转为 miss 的 note
         List<Note> missClicks = new ArrayList<>();
         // 暂存将会转为 小p 的 note
@@ -270,82 +366,172 @@ public class RecordThreadPool implements Runnable {
     }
 
     /**
-     * 连接同色蛇/碎蛇，连接天键与蛇，连接蛇与长条.
+     * 存储所有代表蛇头的 arc，便于其他方法使用.
+     */
+    private List<Arc> arcStarts;
+
+    /**
+     * 连接同色蛇/碎蛇.
+     * <p>
+     * 不考虑异色蛇的连接；不考虑同时出现同色蛇的情况。
+     * <p>
+     * 步骤如下：
+     * 1.按照颜色给蛇分类。不需要排序，因为noteList本身就是已经排序的
+     * 2.如果前者蛇尾距离后者蛇头时间差值（使用绝对值）小于 100 ms，则连接这两个蛇
      *
      * @param noteList 要处理的按键列表
      */
-    private void mergeArcAndArc(List<Note> noteList, UnionFind<Action> manager) {
-        // 时间差小于
-        Map<Integer, List<Arc>> arcs = new HashMap<>();
+    private void mergeArcAndArc(List<Note> noteList, UnionFind<Action> actionUnionFind) {
+        Map<Integer, List<Arc>> arcsMap = new HashMap<>();
         noteList.stream()
                 .filter(o -> o instanceof Arc).map(o -> (Arc) o)
                 .forEachOrdered(arc -> {
-                    if (arcs.containsKey(arc.getColor())) {
-                        arcs.get(arc.getColor()).add(arc);
+                    if (arcsMap.containsKey(arc.getColor())) {
+                        arcsMap.get(arc.getColor()).add(arc);
                     } else {
                         List<Arc> list = new ArrayList<>();
                         list.add(arc);
-                        arcs.put(arc.getColor(), list);
+                        arcsMap.put(arc.getColor(), list);
                     }
                 });
-        for (List<Arc> arcList : arcs.values()) {
-            Arc startArc = null;
-            for (Arc arc : arcList) {
-                // 这个判断条件还要改
-                if (arc.isHasHead()) {
-                    startArc = arc;
+        arcStarts = new ArrayList<>();
+        for (List<Arc> arcs : arcsMap.values()) {
+            boolean lastArcMerged = false;
+            for (int i = 0; i < arcs.size() - 1; i++) {
+                Arc arc1 = arcs.get(i);
+                Arc arc2 = arcs.get(i + 1);
+                if (!lastArcMerged) {
+                    arcStarts.add(arc1);
+                }
+                if (Math.abs(arc1.getT2() - arc2.getT1()) < 100) {
+                    Note.mergeNotes(arc1, arc2, actionUnionFind);
+                    lastArcMerged = true;
                 } else {
-                    Note.mergeNotes(startArc, arc, manager);
+                    lastArcMerged = false;
                 }
             }
+            if (!lastArcMerged) {
+                arcStarts.add(arcs.get(arcs.size() - 1));
+            }
         }
+        Collections.sort(arcStarts);
     }
 
     /**
-     * 连接天键与蛇.
+     * 连接天键与蛇头.
+     * <p>
+     * 如果要连接某个天键与蛇头，那么蛇的 hasHead 必须为 false；
+     * 但天键与蛇较近且的 hasHead 必须为 false，并不能说明二者一定要连接。
+     * <p>
+     * 有可能出现一个键对应多个蛇的情况，merge 操作必须要注意。
+     * eg.天键a后面跟了红蛇和蓝蛇，假如先merge了天键和红蛇，这个天键就不能merge蓝蛇，否则红蓝蛇将使用同一个触控点。
+     * <p>
+     * 还有可能出现天键在蛇头之后。该情况由 Note.mergeNotes() 处理对应 action。
+     * <p>
+     * hasHead = false，如果这个是个碎蛇咋办？蛇+蛇 与 单点+蛇头，这两个哪个先执行？逻辑需要如何调整？
+     * eg. — — |— — 操作是什么样的？
+     * 第一种：蛇按住，单点点一下松开
+     * 第二种：蛇在第二个结尾松开，单点再点下去
+     * 第三种：一个触控点一直按蛇不松，后一个触控点点击天键后，后续与蛇一致
+     * yyq：采用第一种。游戏机制：在按住蛇的情况下，无论怎么点周围都不会断蛇。
+     * 使用第一种操作方式情况下，应该先关联 蛇+蛇，再关联 单点+蛇头。
+     * <p>
+     * 特别声明：该方法作者yyq，有问题找他！
      *
      * @param noteList 要处理的按键列表
      */
-    private void mergeClickAndArc(List<Note> noteList, UnionFind<Action> manager) {
-        // 只有!hasEnd的蛇才能与click/arctap合并
+    private void mergeClickAndArcStart(List<Note> noteList, UnionFind<Action> actionUnionFind) {
+        // 天键与地键判定机区域不同
+        List<Note> clicks = new ArrayList<>(noteList);
+        clicks.removeIf(o -> !(o instanceof Click) && !(o instanceof ArcTap));
+        List<Arc> arcsToBeRemoved = new ArrayList<>();
+        for (var arc : arcStarts) {
+            clicks.removeIf(o -> o.getT1() < arc.getT1() - 100);
+            // 找到所有时间符合要求的单点
+            List<Note> candidateClicks = new ArrayList<>(clicks.stream().filter(o -> o.getT1() <= arc.getT1() + 100).toList());
+            if (candidateClicks.isEmpty()) {
+                break;
+            }
+            // 按照距离最近排序
+            candidateClicks.sort((o1, o2) -> {
+                double[] xy1 = o1.getAffPoint();
+                double dis1 = Math.sqrt(Math.pow(xy1[0] - arc.getX1(), 2) + Math.pow(xy1[1] - arc.getY1(), 2));
+                double[] xy2 = o2.getAffPoint();
+                double dis2 = Math.sqrt(Math.pow(xy2[0] - arc.getX1(), 2) + Math.pow(xy2[1] - arc.getY1(), 2));
+                return Double.compare(dis1, dis2);
+            });
+            Note bestChoice = candidateClicks.get(0);
+            double[] xy = bestChoice.getAffPoint();
+            double minDis = Math.sqrt(Math.pow(xy[0] - arc.getX1(), 2) + Math.pow(xy[1] - arc.getY1(), 2));
+            // todo: 改为用模拟器宽
+            if (minDis > 0.3/*Resolution.R16_9_1280_720.getMaxX() * 0.09375*/) {
+                break;
+            }
+            Note.mergeNotes(bestChoice, arc, actionUnionFind);
+            arcsToBeRemoved.add(arc);
+        }
+        arcStarts.removeAll(arcsToBeRemoved);
     }
 
     /**
-     * 连接蛇与长条.
+     * 连接长条尾与蛇头.
+     * <p>
+     * 时间（100ms内）、距离在一定范围内，直接merge就行。
+     * <p>
+     * 蛇与长条重合的修改在此方法之前，所以此时不会出现长条跟蛇有重合的情况。
      *
      * @param noteList 要处理的按键列表
      */
-    private void mergeArcAndHold(List<Note> noteList, UnionFind<Action> manager) {
-        List<Arc> arcs = new ArrayList<>();
-        noteList.stream()
-                .filter(o -> o instanceof Arc arc && !arc.isHasHead()).map(o -> (Arc) o)
-                .forEachOrdered(arcs::add);
-        List<Hold> holds = new ArrayList<>();
-        noteList.stream()
+    private void mergeHoldEndAndArcStart(List<Note> noteList, UnionFind<Action> actionUnionFind) {
+        List<Hold> holds = new ArrayList<>(noteList.stream()
                 .filter(o -> o instanceof Hold).map(o -> (Hold) o)
-                .forEachOrdered(holds::add);
-        for (List<Arc> arcList : arcs.values()) {
-            Arc startArc = null;
-            for (Arc arc : arcList) {
-                // 这个判断条件还要改
-                if (arc.isHasHead()) {
-                    startArc = arc;
-                } else {
-                    Note.mergeNotes(startArc, arc, manager);
-                }
+                .toList());
+        List<Arc> arcsToBeRemoved = new ArrayList<>();
+        for (var arc : arcStarts) {
+            holds.removeIf(o -> o.getT2() < arc.getT1() - 100);
+            // 找到所有时间符合要求的长条
+            List<Hold> candidateHolds = new ArrayList<>(holds.stream().filter(o -> o.getT2() <= arc.getT1() + 100).toList());
+            if (candidateHolds.isEmpty()) {
+                break;
             }
+            // 按照距离最近排序
+            candidateHolds.sort((o1, o2) -> {
+                double[] xy1 = o1.getAffPoint();
+                double dis1 = Math.sqrt(Math.pow(xy1[0] - arc.getX1(), 2) + Math.pow(xy1[1] - arc.getY1(), 2));
+                double[] xy2 = o2.getAffPoint();
+                double dis2 = Math.sqrt(Math.pow(xy2[0] - arc.getX1(), 2) + Math.pow(xy2[1] - arc.getY1(), 2));
+                return Double.compare(dis1, dis2);
+            });
+            Hold bestChoice = candidateHolds.get(0);
+            double[] xy = bestChoice.getAffPoint();
+            double minDis = Math.sqrt(Math.pow(xy[0] - arc.getX1(), 2) + Math.pow(xy[1] - arc.getY1(), 2));
+            // todo: 改为用模拟器宽
+            if (minDis > 0.3/*Resolution.R16_9_1280_720.getMaxX() * 0.09375*/) {
+                break;
+            }
+            Note.mergeNotes(bestChoice, arc, actionUnionFind);
+            arcsToBeRemoved.add(arc);
         }
+        arcStarts.removeAll(arcsToBeRemoved);
     }
 
-
-    private static void saveRecord(Aff aff, List<Note> noteList, UnionFind<Action> manager, Request p) {
+    /**
+     * 根据需求生成脚本.
+     *
+     * @param aff
+     * @param noteList
+     * @param actionUnionFind
+     * @param p
+     */
+    private static void saveRecord(Aff aff, List<Note> noteList, UnionFind<Action> actionUnionFind,
+                                   int miss, int noShinyPure, Request p) {
         // 构建谱面操作列表，有关联的操作会放在同一个 list 中
         List<List<Action>> actionsList = new ArrayList<>();
         for (var note : noteList) {
             List<Action> noteActions = note.getActions();
             boolean isRelated = false;
             for (var x : actionsList) {
-                if (manager.isRelated(x, noteActions)) {
+                if (actionUnionFind.isRelated(x, noteActions)) {
                     x.addAll(noteActions);
                     isRelated = true;
                     break;
@@ -359,6 +545,7 @@ public class RecordThreadPool implements Runnable {
         for (var relatedActions : actionsList) {
             Collections.sort(relatedActions);
         }
+        actionsList.removeIf(List::isEmpty);
         actionsList.sort(Comparator.comparingInt(list -> list.get(0).t()));
         // 构建实际操作列表
         TouchIdManager idManager = new TouchIdManager();
@@ -370,11 +557,13 @@ public class RecordThreadPool implements Runnable {
             int id = idManager.getId(beginTime, endTime);
             for (var action : relatedActions) {
                 int[] XY = p.resolution().convertToXY(action.x(), action.y(), aff.getRatio46k(action.t()));
-                simpleActions.add(new SimpleAction(action.t(), id, XY[0], XY[1], action != endAction));
+                simpleActions.add(new SimpleAction(action.t() + 10000, id, XY[0], XY[1], action != endAction));
             }
         }
         // 排序
         Collections.sort(simpleActions);
+        // 获取按键最大时间
+        int maxTime = simpleActions.get(simpleActions.size() - 1).timing();
         // 根据要求生成脚本
         JSONArray operationsArray = new JSONArray();
         // 写入暂停、继续操作
@@ -421,14 +610,14 @@ public class RecordThreadPool implements Runnable {
         JSONObject recordInfo = new JSONObject();
         recordInfo.put("loopType", 0);
         recordInfo.put("loopTimes", 1);
-        recordInfo.put("circleDuration", recordEndTime);
+        recordInfo.put("circleDuration", maxTime + 10500);
         recordInfo.put("loopInterval", 0);
         recordInfo.put("loopDuration", 0);
         recordInfo.put("accelerateTimes", 1);
         recordInfo.put("recordName", "");
-        String s = difficult +
+        String s = aff.getDiffStr() +
                 (p.mirror() ? "_镜像_" : "_原版_") +
-                miss + "L" + minPure + "小";
+                miss + "L" + noShinyPure + "小";
         recordInfo.put("createTime", s);
         recordInfo.put("playOnBoot", false);
         recordInfo.put("rebootTiming", 0);
@@ -438,7 +627,7 @@ public class RecordThreadPool implements Runnable {
         // 格式化字符串，并保存至文件
         String formatStr = obj.toString(JSONWriter.Feature.PrettyFormat);// 80%时间
         p.targetDir().mkdirs();
-        File recordFile = new File(p.targetDir(), song + "_" + s + ".record");
+        File recordFile = new File(p.targetDir(), aff.getSongName() + "_" + s + ".record");
         try {
             FileUtils.write(recordFile, formatStr, StandardCharsets.UTF_8);// 10%时间
         } catch (IOException e) {
