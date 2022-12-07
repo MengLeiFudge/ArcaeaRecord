@@ -148,23 +148,6 @@ public class SettingsAndUtils {
     public static final int INTERVAL_TIME = 50;
 
     /**
-     * 蛇种类，目前只有红蓝绿.
-     */
-    public static final int ARC_KINDS = 3;
-
-    /**
-     * 去掉蛇后的最高触控数.
-     * <p>
-     * 因为蛇的触控ID不会更改，且排在非蛇触控ID的后面，所以才有了这个限制。
-     * <p>
-     * 正常来讲，ID不应该超过4个，10个ID足够用了；
-     * 为了方便蛇的拓展，才将蛇的触控ID放在非蛇触控ID之后；
-     * 最终脚本操作都是按下、抬起，无法区分是否为蛇，但是需要对蛇头有单点/长条的情况进行处理，
-     * 所以需要给蛇设置单独的ID，这也是未将蛇也像非蛇按键一样使用 TouchIdManager 进行管理的原因。
-     */
-    public static final int MAX_TOUCH_NUM = 10;
-
-    /**
      * 按键之间影响时间最小值.
      * <p>
      * 该值是为了避免按键操作变化导致相近按键无法正常判定而设立的。

@@ -1,13 +1,14 @@
 package arc.record.aff;
 
 import arc.record.aff.note.Arc;
-import arc.record.aff.note.ArcTap;
 import arc.record.aff.note.Click;
 import arc.record.aff.note.Hold;
 import arc.record.aff.note.Note;
 import arc.record.aff.timing.Timing;
 import arc.record.aff.view.SceneControl;
+import lombok.AccessLevel;
 import lombok.Data;
+import lombok.Setter;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -51,6 +52,7 @@ public class Aff {
      * <p>
      * 如果x≠0，物件在音乐中实际对应的毫秒数=物件时间+x。
      */
+    @Setter(AccessLevel.NONE)
     private int audioOffset = 0;
 
     /**
@@ -60,19 +62,21 @@ public class Aff {
      * <p>
      * y=1时效果与省略此行相同。
      */
+    @Setter(AccessLevel.NONE)
     private float timingPointDensityFactor = 1;
 
     /**
      * 按键列表.
      */
-    private List<Note> noteList = new ArrayList<>();
+    private final List<Note> noteList = new ArrayList<>();
 
     /**
      * 视觉列表.
      * <p>
      * 仅存储 4k/6k 变化的相关语句，即 enwidencamera。enwidenlanes 仅起显示作用，无需处理。
      */
-    private List<SceneControl> sceneControlList = new ArrayList<>();
+    @Setter(AccessLevel.NONE)
+    private final List<SceneControl> sceneControlList = new ArrayList<>();
 
     private static final Pattern P_CLICK = Pattern.compile("\\([0-9]+,[0-5]\\);");
 
@@ -89,6 +93,7 @@ public class Aff {
     /**
      * 谱面note总数.
      */
+    @Setter(AccessLevel.NONE)
     private int noteCount = 0;
 
     public Aff(File affFile) {
@@ -157,8 +162,7 @@ public class Aff {
                         }
                         if (arc.isSkylineBoolean()) {
                             // 多个天键
-                            List<ArcTap> arcTapList = arc.getArcTapList();
-                            currTimingGroup.noteList.addAll(arcTapList);
+                            currTimingGroup.noteList.addAll(arc.getArcTapList());
                         } else {
                             // 蛇需要添加到arcList中
                             arcList.add(arc);

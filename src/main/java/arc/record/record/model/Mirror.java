@@ -1,4 +1,4 @@
-package arc.record.record.data;
+package arc.record.record.model;
 
 /**
  * 脚本镜像类型.

@@ -18,9 +18,9 @@ public class Click extends Note {
 
     public Click(String line) {
         String[] data = line.substring("(".length(), line.length() - 2).split(",");
-        t1 = Integer.parseInt(data[0]);
-        t2 = t1 + CLICK_TIME;
-        lane = Integer.parseInt(data[1]);
+        super.t1 = Integer.parseInt(data[0]);
+        super.t2 = super.t1 + CLICK_TIME;
+        this.lane = Integer.parseInt(data[1]);
     }
 
     @Override
@@ -30,9 +30,6 @@ public class Click extends Note {
 
     @Override
     public double[] getAffPoint(int time) {
-//        if (time < t1 || time > t2) {
-//            throw new IllegalArgumentException("时间 " + time + " 不在 [" + t1 + ", " + t2 + "] 区间内");
-//        }
         return new double[]{lane * 0.5 - 0.75, 0};
     }
 }

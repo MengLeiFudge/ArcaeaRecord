@@ -1,4 +1,4 @@
-package arc.record;
+package arc.record.utils;
 
 public class Tuple<T, E> {
     T t;
@@ -19,7 +19,9 @@ public class Tuple<T, E> {
         if (this == o) {
             return true;
         }
-        if (o == null || getClass() != o.getClass()) return false;
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         Tuple<?, ?> tuple = (Tuple<?, ?>) o;
         return t.equals(tuple.t) && e.equals(tuple.e);
     }

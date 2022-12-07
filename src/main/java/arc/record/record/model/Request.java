@@ -1,6 +1,4 @@
-package arc.record.record.base;
-
-import arc.record.record.data.Resolution;
+package arc.record.record.model;
 
 import java.io.File;
 

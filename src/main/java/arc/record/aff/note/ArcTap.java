@@ -15,8 +15,8 @@ public class ArcTap extends Note {
 
     ArcTap(double[] xy, int time) {
         this.xy = xy;
-        t1 = time;
-        t2 = t1 + CLICK_TIME;
+        super.t1 = time;
+        super.t2 = super.t1 + CLICK_TIME;
     }
 
     @Override
@@ -26,9 +26,6 @@ public class ArcTap extends Note {
 
     @Override
     public double[] getAffPoint(int time) {
-//        if (time < t1 || time > t2) {
-//            throw new IllegalArgumentException("时间 " + time + " 不在 [" + t1 + ", " + t2 + "] 区间内");
-//        }
         return xy;
     }
 }

@@ -16,9 +16,9 @@ public class Hold extends Note {
 
     public Hold(String line) {
         String[] data = line.substring("hold(".length(), line.length() - 2).split(",");
-        t1 = Integer.parseInt(data[0]);
-        t2 = Integer.parseInt(data[1]);
-        lane = Integer.parseInt(data[2]);
+        super.t1 = Integer.parseInt(data[0]);
+        super.t2 = Integer.parseInt(data[1]);
+        this.lane = Integer.parseInt(data[2]);
     }
 
     /**

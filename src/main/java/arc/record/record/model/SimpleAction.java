@@ -1,7 +1,4 @@
-package arc.record.record.data;
-
-import arc.record.SettingsAndUtils;
-import lombok.Data;
+package arc.record.record.model;
 
 import java.io.Serializable;
 
@@ -10,22 +7,8 @@ import java.io.Serializable;
  *
  * @author MengLeiFudge
  */
-@Data
-public class SimpleAction implements Serializable, Comparable<SimpleAction> {
-    private int timing;
-    private int id;
-    private int x;
-    private int y;
-    private boolean isPressDown;
-
-    public SimpleAction(int timing, int id, int x, int y, boolean isPressDown) {
-        this.timing = timing;
-        this.id = id;
-        this.x = x;
-        this.y = y;
-        this.isPressDown = isPressDown;
-    }
-
+public record SimpleAction(int timing, int id, int x, int y, boolean isPressDown)
+        implements Serializable, Comparable<SimpleAction> {
     /**
      * 获取操作类型在脚本中的表示.
      *
@@ -33,10 +16,6 @@ public class SimpleAction implements Serializable, Comparable<SimpleAction> {
      */
     public int getState() {
         return isPressDown ? 1 : 0;
-    }
-
-    public boolean isArc() {
-        return id >= SettingsAndUtils.MAX_TOUCH_NUM;
     }
 
     @Override

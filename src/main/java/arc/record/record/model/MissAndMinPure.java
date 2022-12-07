@@ -1,4 +1,4 @@
-package arc.record.record.data;
+package arc.record.record.model;
 
 /**
  * 表示某种 miss 与 小p 的组合.

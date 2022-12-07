@@ -1,4 +1,4 @@
-package arc.record.record.data;
+package arc.record.record.model;
 
 import java.util.ArrayList;
 import java.util.Collections;

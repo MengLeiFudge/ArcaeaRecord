@@ -2,11 +2,11 @@ package arc.record.funcs;
 
 import arc.record.SettingsAndUtils;
 import arc.record.aff.Aff;
-import arc.record.record.base.RecordThreadPool;
-import arc.record.record.base.Request;
-import arc.record.record.data.Mirror;
-import arc.record.record.data.MissAndMinPure;
-import arc.record.record.data.Resolution;
+import arc.record.record.func.RecordThreadPool;
+import arc.record.record.model.Mirror;
+import arc.record.record.model.MissAndMinPure;
+import arc.record.record.model.Request;
+import arc.record.record.model.Resolution;
 
 import java.io.File;
 import java.io.FileInputStream;

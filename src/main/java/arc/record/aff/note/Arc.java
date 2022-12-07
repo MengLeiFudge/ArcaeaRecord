@@ -36,26 +36,26 @@ public class Arc extends Note {
         } else {
             data = line.substring("arc(".length(), line.indexOf(")[")).split(",");
         }
-        t1 = Integer.parseInt(data[0]);
-        t2 = Integer.parseInt(data[1]);
-        x1 = Double.parseDouble(data[2]);
-        x2 = Double.parseDouble(data[3]);
-        easing = data[4];
-        y1 = Double.parseDouble(data[5]);
-        y2 = Double.parseDouble(data[6]);
-        color = Integer.parseInt(data[7]);
+        super.t1 = Integer.parseInt(data[0]);
+        super.t2 = Integer.parseInt(data[1]);
+        this.x1 = Double.parseDouble(data[2]);
+        this.x2 = Double.parseDouble(data[3]);
+        this.easing = data[4];
+        this.y1 = Double.parseDouble(data[5]);
+        this.y2 = Double.parseDouble(data[6]);
+        this.color = Integer.parseInt(data[7]);
         // data[8] 是打击音效，无用
         if (!skyline) {
             // 不含天键情况下，蛇可能为黑线；含天键情况下，必定为黑线
-            skylineBoolean = Boolean.parseBoolean(data[9]);
+            this.skylineBoolean = Boolean.parseBoolean(data[9]);
             return;
         } else {
-            skylineBoolean = true;
+            this.skylineBoolean = true;
         }
         data = line.substring(line.indexOf(")[") + 2, line.length() - 2).split(",");
         for (var x : data) {
             x = x.replaceAll("arctap\\(|\\)", "");
-            arctapTimingList.add(Integer.parseInt(x));
+            this.arctapTimingList.add(Integer.parseInt(x));
         }
     }
 
