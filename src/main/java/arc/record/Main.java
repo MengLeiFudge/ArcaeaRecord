@@ -24,6 +24,14 @@ import java.util.Scanner;
  * @author MengLeiFudge
  */
 public class Main {
+    //todo: 对于beatCount<=2的蛇/长条，判定点的计算应该使用其中点（其实也不是很准，应该是小于等于1用中点，其余情况使用count*time的位置）
+    //todo: 修改模拟器坐标计算逻辑，扩大4/6k参数，提高精度
+    //todo: 增加4:3分辨率适配
+    //todo: 添加结尾暂停功能，便于调试
+    //todo: 略微左移返回按键的位置
+    //todo: 添加note转回aff的功能，便于调试
+    //todo: 添加slf4j+logback的支持
+
     public static final Scanner sc = new Scanner(System.in).useDelimiter("\n");
 
     public static void main(String[] args) {

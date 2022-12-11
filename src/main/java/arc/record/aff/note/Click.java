@@ -32,4 +32,9 @@ public class Click extends Note {
     public double[] getAffPoint(int time) {
         return new double[]{lane * 0.5 - 0.75, 0};
     }
+
+    @Override
+    public String toString() {
+        return "click t:[" + t1 + ", " + t2 + "] xy(" + getAffPoint()[0] + ", " + getAffPoint()[1] + ")";
+    }
 }

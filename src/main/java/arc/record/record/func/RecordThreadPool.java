@@ -17,6 +17,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.SerializationUtils;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.io.IOException;
@@ -36,8 +37,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static arc.record.SettingsAndUtils.CLICK_TIME;
+import static arc.record.SettingsAndUtils.DEBUG_MODE;
 import static arc.record.SettingsAndUtils.EFFECT_TIME;
 import static arc.record.SettingsAndUtils.THREAD_NUM;
+import static arc.record.SettingsAndUtils.TOUCH_SAMPLE_FREQUENCY;
 import static java.lang.Thread.sleep;
 
 /**
@@ -57,7 +60,7 @@ public class RecordThreadPool implements Runnable {
         }
 
         @Override
-        public Thread newThread(Runnable r) {
+        public Thread newThread(@NotNull Runnable r) {
             Thread t = new Thread(group, r, namePrefix + threadNumber.getAndIncrement(), 0);
             // 设置为非后台进程
             if (t.isDaemon()) {
@@ -153,27 +156,132 @@ public class RecordThreadPool implements Runnable {
                 Aff aff = new Aff(affFile);
                 Map<Integer, List<Request>> map = processMap.get(affFile);
                 List<Note> baseNoteList = aff.getNoteList();
-                optimizeArcOnHold(baseNoteList);
+                // 非DEBUG：dir/testify_BYD_0L0小.record
+                // DEBUG：dir/testify_BYD_test/base.txt
+                //        dir/testify_BYD_test/ArcOnHold.txt
+                //        dir/testify_BYD_test/0L0小/1_modifyMP.txt
+                //        dir/testify_BYD_test/0L0小/2_mergeArcAndArc.txt
+                //        dir/testify_BYD_test/0L0小/3_mergeClickAndArcStart.txt
+                //        dir/testify_BYD_test/0L0小/4_mergeHoldEndAndArcStart.txt
+                int x0 = map.keySet().toArray(new Integer[0])[0];
+                Request request0 = map.get(x0).get(0);
+                File dir0 = new File(request0.targetDir(), "test/" + aff.getSongName() + "_" + aff.getDiffStr());
+                saveNotes(baseNoteList, new File(dir0, "base.txt"));
+                optimizeArcOnHold(aff, baseNoteList);
+                saveNotes(baseNoteList, new File(dir0, "ArcOnHold.txt"));
                 for (var x : map.keySet()) {
                     int miss = x / (aff.getNoteCount() + 1);
                     int noShinyPure = x % (aff.getNoteCount() + 1);
+                    File dir1 = new File(dir0, miss + "L" + noShinyPure + "小");
                     List<Note> noteList = SerializationUtils.clone((ArrayList<Note>) baseNoteList);
                     modifyMP(noteList, miss, noShinyPure);
-                    UnionFind<Action> actionUnionFind = new UnionFind<>();
-                    for (var note : noteList) {
-                        note.initActions(actionUnionFind);
-                    }
-                    mergeArcAndArc(noteList, actionUnionFind);
-                    mergeClickAndArcStart(noteList, actionUnionFind);
-                    mergeHoldEndAndArcStart(noteList, actionUnionFind);
-                    for (var p : map.get(x)) {
-                        saveRecord(aff, noteList, actionUnionFind, miss, noShinyPure, p);
+                    // 例如 last eternity 的前三个谱面都没有按键
+                    if (!noteList.isEmpty()) {
+                        UnionFind<Action> actionUnionFind = new UnionFind<>();
+                        for (var note : noteList) {
+                            note.initActions(actionUnionFind);
+                        }
+                        if (DEBUG_MODE) {
+                            saveActions(noteList, actionUnionFind, new File(dir1, "1_modifyMP.txt"));
+                            System.out.println("2");
+                        }
+                        mergeArcAndArc(noteList, actionUnionFind);
+                        if (DEBUG_MODE) {
+                            saveActions(noteList, actionUnionFind, new File(dir1, "2_ArcArc.txt"));
+                            System.out.println("3");
+                        }
+                        mergeClickAndArcStart(noteList, actionUnionFind);
+                        if (DEBUG_MODE) {
+                            saveActions(noteList, actionUnionFind, new File(dir1, "3_ClickArc.txt"));
+                            System.out.println("4");
+                        }
+                        mergeHoldEndAndArcStart(noteList, actionUnionFind);
+                        if (DEBUG_MODE) {
+                            saveActions(noteList, actionUnionFind, new File(dir1, "4_HoldArc.txt"));
+                        }
+                        for (var request : map.get(x)) {
+                            saveRecord(aff, noteList, actionUnionFind, miss, noShinyPure, request, dir1);
+                        }
                     }
                     synchronized (RecordThreadPool.class) {
                         processedNum += map.size();
                     }
                 }
             }
+        }
+    }
+
+    private void saveNotes(List<Note> noteList, File file) {
+        if (!DEBUG_MODE) {
+            return;
+        }
+        List<String> lines = new ArrayList<>();
+        for (var note : noteList) {
+            lines.add(note.toString());
+        }
+        try {
+            FileUtils.writeLines(file, lines);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private List<List<Action>> convertToActionList(List<Note> noteList, UnionFind<Action> actionUnionFind) {
+        List<List<Action>> actionsList = new ArrayList<>();
+        for (var note : noteList) {
+            List<Action> noteActions = note.getActions();
+            if (noteActions.isEmpty()) {
+                continue;
+            }
+            boolean isRelated = false;
+            for (var x : actionsList) {
+                if (actionUnionFind.isRelated(x.get(0), noteActions.get(0))) {
+                    x.addAll(noteActions);
+                    isRelated = true;
+                    break;
+                }
+            }
+            if (!isRelated) {
+                actionsList.add(noteActions);
+            }
+        }
+        // 排序
+        for (var relatedActions : actionsList) {
+            Collections.sort(relatedActions);
+        }
+        actionsList.removeIf(List::isEmpty);
+        actionsList.sort(Comparator.comparingInt(list -> list.get(0).t()));
+        return actionsList;
+    }
+
+    private void saveActions(List<Note> noteList, UnionFind<Action> actionUnionFind, File file) {
+        if (!DEBUG_MODE) {
+            return;
+        }
+        // 原始list
+        List<List<Action>> actionLists = convertToActionList(noteList, actionUnionFind);
+        // 操作map
+        Map<Action, Integer> map = new HashMap<>();
+        for (var actionList : actionLists) {
+            for (var action : actionList) {
+                map.put(action, actionLists.indexOf(actionList));
+            }
+        }
+        // 操作集合
+        List<Action> actions = new ArrayList<>();
+        for (var list : actionLists) {
+            actions.addAll(list);
+        }
+        Collections.sort(actions);
+        // 输出
+        List<String> lines = new ArrayList<>();
+        for (var action : actions) {
+            lines.add(action.toString() /*+ " " + String.format("%4d", map.get(action))*/);
+        }
+        try {
+            FileUtils.writeLines(file, lines);
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
@@ -198,16 +306,30 @@ public class RecordThreadPool implements Runnable {
      *
      * @param noteList 要处理的按键列表
      */
-    private void optimizeArcOnHold(List<Note> noteList) {
-        // todo: 0.5改成46k影响
+    private void optimizeArcOnHold(Aff aff, List<Note> noteList) {
         List<Arc> arcs = new ArrayList<>(noteList.stream()
-                .filter(o -> o instanceof Arc arc
-                        && arc.getY1() < 0.5
-                        && arc.getY2() < 0.5).map(o -> (Arc) o)
+                .filter(o -> o instanceof Arc).map(o -> (Arc) o)
                 .toList());
-        List<Hold> holds = noteList.stream()
+        // 移除触控点的y总是大于y一半的蛇
+        double[] xy;
+        List<Arc> arcsToBeRemoved = new ArrayList<>();
+        for (var arc : arcs) {
+            boolean yGreaterThanMiddle = true;
+            for (float t = arc.getT1(); t < arc.getT2(); t += arc.getBeatTime() / TOUCH_SAMPLE_FREQUENCY) {
+                xy = arc.getAffPoint((int) t);
+                if (xy[1] < aff.getMiddleY((int) t)) {
+                    yGreaterThanMiddle = false;
+                    break;
+                }
+            }
+            if (yGreaterThanMiddle) {
+                arcsToBeRemoved.add(arc);
+            }
+        }
+        arcs.removeAll(arcsToBeRemoved);
+        List<Hold> holds = new ArrayList<>(noteList.stream()
                 .filter(o -> o instanceof Hold).map(o -> (Hold) o)
-                .toList();
+                .toList());
         for (var hold : holds) {
             arcs.removeIf(arc -> arc.getT2() <= hold.getT1());
             // 找到所有时间可能符合要求的Arc
@@ -218,47 +340,76 @@ public class RecordThreadPool implements Runnable {
             // 长条判定区
             double minX = hold.getLane() * 0.5 - 1;
             double maxX = hold.getLane() * 0.5 - 0.5;
-            double[] xy;
+            // 对于所有对该长条有影响的蛇，保存有影响的时间段；保存时，如果差距在50ms内，则合并两个时间段
             Map<Integer, Integer> timeMap = new HashMap<>();
             for (var arc : candidateArcs) {
-                List<Integer> times = new ArrayList<>();
-                boolean isEndOk = false;
-                for (float t = arc.getT1(); t < arc.getT2(); t += arc.getBeatTime() / 4) {
+                // 一个蛇至多有一段时间与长条有影响
+                int startTime = -1;
+                int endTime = -1;
+                for (float t = arc.getT1(); t < arc.getT2(); t += arc.getBeatTime() / TOUCH_SAMPLE_FREQUENCY) {
                     xy = arc.getAffPoint((int) t);
-                    if (xy[0] > minX && xy[0] < maxX && xy[1] < 0.5) {
-                        times.add((int) t);
-                        isEndOk = true;
-                    } else {
-                        isEndOk = false;
+                    if (xy[0] > minX && xy[0] < maxX && xy[1] < aff.getMiddleY((int) t)) {
+                        if (startTime == -1) {
+                            startTime = (int) t;
+                        }
+                        endTime = (int) t;
+                    } else if (startTime != -1) {
+                        endTime = (int) t;
+                        break;
+                    }
+                    if (t + arc.getBeatTime() / TOUCH_SAMPLE_FREQUENCY >= arc.getT2()) {
+                        xy = arc.getAffPoint(arc.getT2());
+                        if (xy[0] > minX && xy[0] < maxX && xy[1] < aff.getMiddleY(arc.getT2())) {
+                            if (startTime == -1) {
+                                startTime = arc.getT2();
+                            }
+                            endTime = arc.getT2();
+                        } else if (startTime != -1) {
+                            endTime = arc.getT2();
+                            break;
+                        }
                     }
                 }
-                if (isEndOk) {
-                    times.add(arc.getT2());
-                }
-                if (times.size() < 2) {
-                    continue;
-                }
-                int startTime = times.get(0);
-                int endTime = times.get(times.size() - 1);
                 if (startTime >= endTime) {
                     continue;
                 }
-                boolean input = false;
+                // 找到这段时间后，将其添加至 timeMap
+                // canMerge 为 true，表示这个新的时间段应该与现有的合并；false 表示该时间段是独立的
+                boolean canMerge = false;
                 for (var x : timeMap.entrySet()) {
-                    if (!(x.getKey() > endTime && x.getValue() < startTime)) {
-                        timeMap.remove(x.getKey());
-                        timeMap.put(Math.min(x.getKey(), startTime), Math.max(x.getValue(), endTime));
-                        input = true;
+                    if (x.getKey() < endTime + 50 && x.getValue() > startTime - 50) {
+                        canMerge = true;
                         break;
                     }
                 }
-                if (!input) {
+                if (!canMerge) {
+                    timeMap.put(startTime, endTime);
+                } else {
+                    while (true) {
+                        boolean flag = false;
+                        for (var x : timeMap.entrySet()) {
+                            if (startTime == x.getKey() && endTime == x.getValue()) {
+                                continue;
+                            }
+                            if (x.getKey() < endTime + 50 && x.getValue() > startTime - 50) {
+                                startTime = Math.min(x.getKey(), startTime);
+                                endTime = Math.max(x.getValue(), endTime);
+                                timeMap.remove(x.getKey());
+                                flag = true;
+                                break;
+                            }
+                        }
+                        if (!flag) {
+                            break;
+                        }
+                    }
                     timeMap.put(startTime, endTime);
                 }
             }
             if (timeMap.isEmpty()) {
                 continue;
             }
+            // 如果时间段超出note范围，将其缩小到note时间范围
             List<Integer> startTimeList = new ArrayList<>(timeMap.keySet().stream().toList());
             Collections.sort(startTimeList);
             for (var x : startTimeList) {
@@ -272,34 +423,30 @@ public class RecordThreadPool implements Runnable {
             if (timeMap.isEmpty()) {
                 continue;
             }
+            // 根据timeMap的时间段，将hold处理为多个新的hold
             startTimeList = new ArrayList<>(timeMap.keySet().stream().toList());
             Collections.sort(startTimeList);
             List<Hold> newHolds = new ArrayList<>();
             int firstStartTime = startTimeList.get(0);
-            if (firstStartTime != hold.getT1()) {
-                Hold newHold = SerializationUtils.clone(hold);
-                newHold.setT2(Math.max(hold.getT1() + CLICK_TIME, firstStartTime));
-                newHolds.add(newHold);
-            } else {
-                Hold newHold = SerializationUtils.clone(hold);
-                newHold.setT2(hold.getT1() + CLICK_TIME);
-                newHolds.add(newHold);
-            }
+            Hold newHoldStart = SerializationUtils.clone(hold);
+            newHoldStart.setT2(Math.max(hold.getT1() + CLICK_TIME, firstStartTime));
+            newHolds.add(newHoldStart);
             for (int i = 0; i < startTimeList.size() - 1; i++) {
-                Hold newHold = SerializationUtils.clone(hold);
-                newHold.setT1(timeMap.get(startTimeList.get(i)));
-                newHold.setT2(startTimeList.get(i + 1));
-                newHolds.add(newHold);
+                Hold newHoldMiddle = SerializationUtils.clone(hold);
+                newHoldMiddle.setT1(timeMap.get(startTimeList.get(i)));
+                newHoldMiddle.setT2(startTimeList.get(i + 1));
+                newHolds.add(newHoldMiddle);
             }
             int lastEndTime = timeMap.get(startTimeList.get(startTimeList.size() - 1));
-            if (lastEndTime != hold.getT2()) {
-                Hold newHold = SerializationUtils.clone(hold);
-                newHold.setT1(lastEndTime);
-                newHolds.add(newHold);
+            if (hold.getT2() - lastEndTime > 50) {
+                Hold newHoldEnd = SerializationUtils.clone(hold);
+                newHoldEnd.setT1(lastEndTime);
+                newHolds.add(newHoldEnd);
             }
             noteList.remove(hold);
             noteList.addAll(newHolds);
         }
+        Collections.sort(noteList);
     }
 
     /**
@@ -403,8 +550,13 @@ public class RecordThreadPool implements Runnable {
                 if (!lastArcMerged) {
                     arcStarts.add(arc1);
                 }
-                if (Math.abs(arc1.getT2() - arc2.getT1()) < 100) {
+                if (arc2.getT1() - arc1.getT2() < 50) {
                     Note.mergeNotes(arc1, arc2, actionUnionFind);
+                    if (DEBUG_MODE) {
+                        System.out.println(arc1 + " + " + arc2);
+                    }
+                    //System.out.println(arc1.getColor() + " " + arc1.getT1() + "-"
+                    // + arc1.getT2() + ", " + arc2.getT1() + "-" + arc2.getT2());
                     lastArcMerged = true;
                 } else {
                     lastArcMerged = false;
@@ -415,6 +567,9 @@ public class RecordThreadPool implements Runnable {
             }
         }
         Collections.sort(arcStarts);
+       /* for (var arc : arcStarts) {
+            System.out.println(arc.getColor() + " " + arc.getT1() + "-" + arc.getT2());
+        }*/
     }
 
     /**
@@ -446,11 +601,12 @@ public class RecordThreadPool implements Runnable {
         clicks.removeIf(o -> !(o instanceof Click) && !(o instanceof ArcTap));
         List<Arc> arcsToBeRemoved = new ArrayList<>();
         for (var arc : arcStarts) {
-            clicks.removeIf(o -> o.getT1() < arc.getT1() - 100);
+            clicks.removeIf(o -> o.getT1() < arc.getT1() - CLICK_TIME);
             // 找到所有时间符合要求的单点
-            List<Note> candidateClicks = new ArrayList<>(clicks.stream().filter(o -> o.getT1() <= arc.getT1() + 100).toList());
+            List<Note> candidateClicks = new ArrayList<>(clicks.stream()
+                    .filter(o -> o.getT1() <= arc.getT1() + CLICK_TIME).toList());
             if (candidateClicks.isEmpty()) {
-                break;
+                continue;
             }
             // 按照距离最近排序
             candidateClicks.sort((o1, o2) -> {
@@ -463,11 +619,15 @@ public class RecordThreadPool implements Runnable {
             Note bestChoice = candidateClicks.get(0);
             double[] xy = bestChoice.getAffPoint();
             double minDis = Math.sqrt(Math.pow(xy[0] - arc.getX1(), 2) + Math.pow(xy[1] - arc.getY1(), 2));
-            // todo: 改为用模拟器宽
+            // todo: 改为用模拟器宽，区分天键和地键
             if (minDis > 0.3/*Resolution.R16_9_1280_720.getMaxX() * 0.09375*/) {
-                break;
+                continue;
             }
             Note.mergeNotes(bestChoice, arc, actionUnionFind);
+            if (DEBUG_MODE) {
+                System.out.println(bestChoice + " + " + arc);
+            }
+            clicks.remove(bestChoice);
             arcsToBeRemoved.add(arc);
         }
         arcStarts.removeAll(arcsToBeRemoved);
@@ -488,11 +648,12 @@ public class RecordThreadPool implements Runnable {
                 .toList());
         List<Arc> arcsToBeRemoved = new ArrayList<>();
         for (var arc : arcStarts) {
-            holds.removeIf(o -> o.getT2() < arc.getT1() - 100);
+            holds.removeIf(hold -> hold.getT2() < arc.getT1() - CLICK_TIME);
             // 找到所有时间符合要求的长条
-            List<Hold> candidateHolds = new ArrayList<>(holds.stream().filter(o -> o.getT2() <= arc.getT1() + 100).toList());
+            List<Hold> candidateHolds = new ArrayList<>(holds.stream()
+                    .filter(hold -> hold.getT2() <= arc.getT1() + CLICK_TIME).toList());
             if (candidateHolds.isEmpty()) {
-                break;
+                continue;
             }
             // 按照距离最近排序
             candidateHolds.sort((o1, o2) -> {
@@ -507,9 +668,13 @@ public class RecordThreadPool implements Runnable {
             double minDis = Math.sqrt(Math.pow(xy[0] - arc.getX1(), 2) + Math.pow(xy[1] - arc.getY1(), 2));
             // todo: 改为用模拟器宽
             if (minDis > 0.3/*Resolution.R16_9_1280_720.getMaxX() * 0.09375*/) {
-                break;
+                continue;
             }
             Note.mergeNotes(bestChoice, arc, actionUnionFind);
+            if (DEBUG_MODE) {
+                System.out.println(bestChoice + " + " + arc);
+            }
+            holds.remove(bestChoice);
             arcsToBeRemoved.add(arc);
         }
         arcStarts.removeAll(arcsToBeRemoved);
@@ -518,35 +683,18 @@ public class RecordThreadPool implements Runnable {
     /**
      * 根据需求生成脚本.
      *
-     * @param aff
-     * @param noteList
-     * @param actionUnionFind
-     * @param p
+     * @param aff             要生成脚本的谱面文件
+     * @param noteList        处理后的最终按键列表
+     * @param actionUnionFind 操作并查集，记录action的关联
+     * @param miss            miss个数
+     * @param noShinyPure     小p个数
+     * @param request         脚本生成需求
+     * @param dir1            如果为调试模式，该目录为调试脚本保存路径
      */
-    private static void saveRecord(Aff aff, List<Note> noteList, UnionFind<Action> actionUnionFind,
-                                   int miss, int noShinyPure, Request p) {
+    private void saveRecord(Aff aff, List<Note> noteList, UnionFind<Action> actionUnionFind,
+                            int miss, int noShinyPure, Request request, File dir1) {
         // 构建谱面操作列表，有关联的操作会放在同一个 list 中
-        List<List<Action>> actionsList = new ArrayList<>();
-        for (var note : noteList) {
-            List<Action> noteActions = note.getActions();
-            boolean isRelated = false;
-            for (var x : actionsList) {
-                if (actionUnionFind.isRelated(x, noteActions)) {
-                    x.addAll(noteActions);
-                    isRelated = true;
-                    break;
-                }
-            }
-            if (!isRelated) {
-                actionsList.add(noteActions);
-            }
-        }
-        // 排序
-        for (var relatedActions : actionsList) {
-            Collections.sort(relatedActions);
-        }
-        actionsList.removeIf(List::isEmpty);
-        actionsList.sort(Comparator.comparingInt(list -> list.get(0).t()));
+        List<List<Action>> actionsList = convertToActionList(noteList, actionUnionFind);
         // 构建实际操作列表
         TouchIdManager idManager = new TouchIdManager();
         List<SimpleAction> simpleActions = new ArrayList<>();
@@ -556,25 +704,25 @@ public class RecordThreadPool implements Runnable {
             int endTime = endAction.t();
             int id = idManager.getId(beginTime, endTime);
             for (var action : relatedActions) {
-                int[] XY = p.resolution().convertToXY(action.x(), action.y(), aff.getRatio46k(action.t()));
+                int[] XY = DEBUG_MODE
+                        ? new int[]{(int) (action.x() * 100), (int) (action.y() * 100)}
+                        : request.resolution().convertToXY(action.x(), action.y(), aff.getRatio46k(action.t()));
                 simpleActions.add(new SimpleAction(action.t() + 10000, id, XY[0], XY[1], action != endAction));
             }
         }
         // 排序
         Collections.sort(simpleActions);
-        // 获取按键最大时间
-        int maxTime = simpleActions.get(simpleActions.size() - 1).timing();
         // 根据要求生成脚本
         JSONArray operationsArray = new JSONArray();
         // 写入暂停、继续操作
-        List<SimpleAction> preSimpleActions = p.resolution().getPreSimpleActions();
+        List<SimpleAction> preSimpleActions = request.resolution().getPreSimpleActions();
         for (int i = 0; i < preSimpleActions.size(); i++) {
             int timing = preSimpleActions.get(i).timing();
             JSONArray points = new JSONArray();
             for (int j = i; j < preSimpleActions.size(); j++) {
                 SimpleAction o1 = preSimpleActions.get(j);
                 if (o1.timing() == timing) {
-                    add(points, o1, false, p.resolution());
+                    add(points, o1, false, request.resolution());
                     i++;
                 } else {
                     break;
@@ -594,7 +742,7 @@ public class RecordThreadPool implements Runnable {
             for (int j = i; j < simpleActions.size(); j++) {
                 SimpleAction o1 = simpleActions.get(j);
                 if (o1.timing() == timing) {
-                    add(points, o1, p.mirror(), p.resolution());
+                    add(points, o1, request.mirror(), request.resolution());
                     i++;
                 } else {
                     break;
@@ -610,13 +758,15 @@ public class RecordThreadPool implements Runnable {
         JSONObject recordInfo = new JSONObject();
         recordInfo.put("loopType", 0);
         recordInfo.put("loopTimes", 1);
-        recordInfo.put("circleDuration", maxTime + 10500);
+        // 获取按键最大时间
+        int circleDuration = simpleActions.get(simpleActions.size() - 1).timing() + 500;
+        recordInfo.put("circleDuration", circleDuration);
         recordInfo.put("loopInterval", 0);
         recordInfo.put("loopDuration", 0);
         recordInfo.put("accelerateTimes", 1);
         recordInfo.put("recordName", "");
         String s = aff.getDiffStr() +
-                (p.mirror() ? "_镜像_" : "_原版_") +
+                (request.mirror() ? "_镜像_" : "_原版_") +
                 miss + "L" + noShinyPure + "小";
         recordInfo.put("createTime", s);
         recordInfo.put("playOnBoot", false);
@@ -625,11 +775,11 @@ public class RecordThreadPool implements Runnable {
         obj.put("operations", operationsArray);
         obj.put("recordInfo", recordInfo);
         // 格式化字符串，并保存至文件
-        String formatStr = obj.toString(JSONWriter.Feature.PrettyFormat);// 80%时间
-        p.targetDir().mkdirs();
-        File recordFile = new File(p.targetDir(), aff.getSongName() + "_" + s + ".record");
+        String formatStr = obj.toString(JSONWriter.Feature.PrettyFormat);
+        File targetDir = DEBUG_MODE ? dir1 : request.targetDir();
+        File recordFile = new File(targetDir, aff.getSongName() + "_" + s + ".record");
         try {
-            FileUtils.write(recordFile, formatStr, StandardCharsets.UTF_8);// 10%时间
+            FileUtils.write(recordFile, formatStr, StandardCharsets.UTF_8);
         } catch (IOException e) {
             e.printStackTrace();
         }

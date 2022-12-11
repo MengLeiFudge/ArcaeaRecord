@@ -15,4 +15,15 @@ public record Action(double x, double y, int t) implements Comparable<Action> {
     public int compareTo(Action o) {
         return t - o.t;
     }
+
+    @Override
+    public String toString() {
+        return "Action[" + String.format("%6d", t) + "] xy(" + String.format("%2f", x)
+                + ", " + String.format("%2f", y) + ")";
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        return this == other;
+    }
 }

@@ -16,6 +16,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 import static arc.record.Main.sc;
+import static arc.record.SettingsAndUtils.SONG_LIST;
 
 /**
  * @author MengLeiFudge
@@ -245,11 +246,8 @@ public class GetAllFiles {
     }
 
     public void moveSongList() {
-        File songListInAffDir = new File(affDir, "songlist");
-        File songListInProject = new File("songlist.json");
         try {
-            FileUtils.deleteQuietly(songListInProject);
-            FileUtils.copyFile(songListInAffDir, songListInProject);
+            FileUtils.copyFile(new File(affDir, "songlist"), SONG_LIST);
         } catch (IOException e) {
             e.printStackTrace();
         }

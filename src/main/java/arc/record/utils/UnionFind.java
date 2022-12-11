@@ -1,29 +1,34 @@
 package arc.record.utils;
 
-import org.jetbrains.annotations.NotNull;
-
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
 /**
- * 动态大小，并查集.
+ * 并查集，输入同一个类的两个对象，输出这两个对象是否具有关联.
  * <p>
- * 输入同一个类的两个对象，输出这两个对象是否具有关联。
+ * <b>要进行操作的类必须保证 equals 方法内部判断为 == 。</b>
  *
  * @author MengLeiFudge
  */
 public class UnionFind<T> {
     /**
-     * 存放 类T 的实力对象关系的 Map，key 为对象，value 为 key 所在关系圈的最后一个对象.
-     * <p>
-     * value 不会为 null。
-     * <p>
-     * 如果 value 为 key，表示该 key 在某个关系组中，且它是关系组的最后一位。
+     * 存放连接关系的 map，value 为 自身表示.
      */
-    private final Map<T, T> masterMap = new HashMap<>();
+    private final Map<T, T> rootMap = new HashMap<>();
+
+    /**
+     * 添加一个实例对象.
+     *
+     * @param t 要添加的实例
+     */
+    public final void add(T t) {
+        if (t == null) {
+            return;
+        }
+        rootMap.put(t, t);
+    }
 
     /**
      * 添加多个有关联的实例对象.
@@ -40,7 +45,7 @@ public class UnionFind<T> {
         }
         T value = ts.get(0);
         for (var t : ts) {
-            masterMap.put(t, value);
+            rootMap.put(t, value);
         }
     }
 
@@ -50,58 +55,40 @@ public class UnionFind<T> {
      * @param t 要获取最终关联对象的实例
      * @return 该实例对应的最终关联对象
      */
-    private T get(@NotNull T t) {
-        T value = masterMap.get(t);
-        if (value == t) {
+    private T getRootValue(T t) {
+        T rootValue = rootMap.get(t);
+        if (rootValue == t) {
             return t;
         }
-        value = get(value);
-        masterMap.put(t, value);
-        return value;
+        rootValue = getRootValue(rootValue);
+        rootMap.put(t, rootValue);
+        return rootValue;
     }
 
     /**
-     * 连接两个列表中的实例对象，使它们全部指向同一个最终关联对象.
+     * 为两个实例对象建立联系.
      *
-     * @param t1s 要连接的实例列表
-     * @param t2s 要连接的实例列表
+     * @param t1 要连接的实例
+     * @param t2 要连接的实例
      */
-    public final void merge(List<T> t1s, List<T> t2s) {
-        List<T> list = new ArrayList<>();
-        if (t1s != null) {
-            t1s.removeIf(Objects::isNull);
-            list.addAll(t1s);
-        }
-        if (t2s != null) {
-            t2s.removeIf(Objects::isNull);
-            list.addAll(t2s);
-        }
-        if (list.isEmpty()) {
+    public final void merge(T t1, T t2) {
+        if (t1 == null || t2 == null) {
             return;
         }
-        T notNullT = list.get(0);
-        T value = get(notNullT);
-        for (var t : list) {
-            masterMap.put(t, value);
-        }
+        rootMap.put(getRootValue(t1), getRootValue(t2));
     }
 
     /**
-     * 判断两个列表是否有关联.
+     * 判断两个实例对象是否有关联.
      *
-     * @param t1s 要判断是否有关联的实例列表
-     * @param t2s 要判断是否有关联的实例列表
+     * @param t1 要判断是否有关联的实例列表
+     * @param t2 要判断是否有关联的实例列表
      * @return 如果有关联，返回 true；否则返回 false
      */
-    public boolean isRelated(List<T> t1s, List<T> t2s) {
-        if (t1s == null || t2s == null) {
+    public boolean isRelated(T t1, T t2) {
+        if (t1 == null || t2 == null) {
             return false;
         }
-        t1s.removeIf(Objects::isNull);
-        t2s.removeIf(Objects::isNull);
-        if (t1s.isEmpty() || t2s.isEmpty()) {
-            return false;
-        }
-        return get(t1s.get(0)) == get(t2s.get(0));
+        return getRootValue(t1) == getRootValue(t2);
     }
 }

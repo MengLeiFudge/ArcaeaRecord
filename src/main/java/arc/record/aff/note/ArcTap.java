@@ -28,4 +28,9 @@ public class ArcTap extends Note {
     public double[] getAffPoint(int time) {
         return xy;
     }
+
+    @Override
+    public String toString() {
+        return "arctap t:[" + t1 + ", " + t2 + "] xy(" + xy[0] + ", " + xy[1] + ")";
+    }
 }

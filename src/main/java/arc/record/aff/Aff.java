@@ -201,7 +201,10 @@ public class Aff {
             if (timingGroup.noInput) {
                 continue;
             }
-            noteList.addAll(timingGroup.noteList);
+            timingGroup.noteList.removeIf(o -> o instanceof Arc arc && arc.getT1() == arc.getT2());
+            if (!timingGroup.noteList.isEmpty()) {
+                noteList.addAll(timingGroup.noteList);
+            }
         }
         Collections.sort(noteList);
         // 计算 noteCount
@@ -240,6 +243,12 @@ public class Aff {
         }
     }
 
+    /**
+     * 返回某个时刻谱面的 4/6k 进度，范围 0-1.
+     *
+     * @param time 目标时间戳
+     * @return 某个时刻谱面的 4/6k 进度，0 表示 4k，1 表示 6k。
+     */
     public double getRatio46k(int time) {
         double ratio46k = 0;
         for (var control : sceneControlList) {
@@ -255,5 +264,17 @@ public class Aff {
             }
         }
         return ratio46k;
+    }
+
+    /**
+     * 返回某个时刻谱面 y 最大值的一半.
+     * <p>
+     * ratio46k=0，返回 1/2；ratio46k=1，返回 1.61/2。
+     *
+     * @param time 目标时间戳
+     * @return 某个时刻谱面 y 最大值的一半
+     */
+    public double getMiddleY(int time) {
+        return (1 + getRatio46k(time) * (1.61 - 1)) / 2;
     }
 }

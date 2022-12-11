@@ -34,6 +34,13 @@ public class SettingsAndUtils {
     }
 
     /**
+     * 指示是否为调试模式.
+     * <p>
+     * 调试模式下会生成中间的处理按键列表
+     */
+    public static final boolean DEBUG_MODE = false;
+
+    /**
      * arc 文件存放的根目录.
      */
     public static final File ARC_DIR = new File("D:/arc");
@@ -76,6 +83,7 @@ public class SettingsAndUtils {
      * 脚本文件夹所在的根目录.
      */
     public static final File VMS_DIR = new File("F:/leidian/vms");
+    //public static final File VMS_DIR = new File("C:\\机台源码勿动\\MLJ\\arc\\record");
 
     /**
      * JVM 可用的最大 CPU 数量.
@@ -85,7 +93,7 @@ public class SettingsAndUtils {
     /**
      * 项目目录的 songlist 文件.
      */
-    public static final File SONG_LIST = new File("songlist.json");
+    public static final File SONG_LIST = new File("src/main/resources/songlist.json");
 
     /**
      * 暂存 sid 与 歌曲英文名 的对应关系，提升读取速度.
@@ -96,7 +104,7 @@ public class SettingsAndUtils {
      * 根据输入的 sid，返回对应的歌曲英文名.
      *
      * @param sid 要查找歌曲名的歌曲 id
-     * @return 如果 SONG_LIST 文件中包含该歌曲，返回英文歌曲名；否则返回 null
+     * @return 如果 SONG_LIST 文件中包含该歌曲，返回歌曲英文名；否则返回 null
      */
     public static String getTitleLocalizedEN(String sid) {
         if (!SONG_MAP.containsKey(sid)) {
@@ -118,10 +126,10 @@ public class SettingsAndUtils {
     }
 
     /**
-     * 根据输入的 sid，返回对应的歌曲英文名.
+     * 根据输入的 sid，返回经过处理后的英文名.
      *
      * @param sid 要查找歌曲名的歌曲 id
-     * @return 如果 SONG_LIST 文件中包含该歌曲，返回英文歌曲名；否则返回 null
+     * @return 如果 SONG_LIST 文件中包含该歌曲，返回经过处理后的英文歌曲名；否则返回 sid
      */
     public static String getProcessedTitle(String sid) {
         String songName = getTitleLocalizedEN(sid);
@@ -164,9 +172,20 @@ public class SettingsAndUtils {
     /**
      * 点击继续按钮的抬起时机.
      * <p>
-     * 如果
+     * 如果脚本 late 较多，则应减小该值。
      */
     public static final int CONTINUE_TIME = 6990;
+
+    /**
+     * 触控采样频率.
+     * <p>
+     * 雷电模拟器只有按下和抬起操作，所以长条、蛇转为操作时，需要根据判定间隔计算坐标。
+     * <p>
+     * 该值表示每个判定间隔计算几次坐标。该值越大，移动操作就越精确，脚本大小也更大。
+     * <p>
+     * 该值必须大于等于1。
+     */
+    public static final float TOUCH_SAMPLE_FREQUENCY = 8;
 
 
     static SimpleDateFormat sdf = new SimpleDateFormat("MMdd_HHmmss");

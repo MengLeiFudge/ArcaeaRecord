@@ -26,6 +26,7 @@ import java.util.zip.ZipOutputStream;
 
 import static arc.record.Main.sc;
 import static arc.record.SettingsAndUtils.AFF_DIR;
+import static arc.record.SettingsAndUtils.DEBUG_MODE;
 import static arc.record.SettingsAndUtils.VMS_DIR;
 
 /**
@@ -162,13 +163,21 @@ public class AffToRecord {
     }
 
     private void test() {
-        affDir = AFF_DIR;
+        if (DEBUG_MODE) {
+            System.out.println("输入文件夹名");
+            //affDir = new File(AFF_DIR, "qualia");
+            //affDir = new File(AFF_DIR, "dl_testify");
+            //affDir = new File(AFF_DIR, "dl_heavensdoor");
+            affDir = new File(AFF_DIR, sc.nextLine());
+        } else {
+            affDir = AFF_DIR;
+        }
         minDifficulty = 3;
         maxDifficulty = 3;
         mirror = Mirror.ORIGIN;
         resolution = Resolution.R16_9_1280_720;
         missAndMinPure = new MissAndMinPure("0", "0");
-        targetDir = VMS_DIR;
+        targetDir = new File(VMS_DIR, "operationRecords");
         try {
             targetDir = targetDir.getCanonicalFile();
         } catch (IOException e) {

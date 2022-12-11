@@ -46,4 +46,23 @@ public class Hold extends Note {
         }
         return new double[]{lane * 0.5 - 0.75, 0};
     }
+
+    /**
+     * 返回最后一个判定点的时机.
+     *
+     * @return 最后一个判定点的时机
+     */
+    public int getLastNoteTime() {
+        int beatCount = (int) ((t2 - t1) / beatTime);
+        if (beatCount <= 2) {
+            return (t1 + t2) / 2;
+        } else {
+            return t1 + (int) (beatTime * beatCount);
+        }
+    }
+
+    @Override
+    public String toString() {
+        return "hold t:[" + t1 + ", " + t2 + "] xy(" + getAffPoint()[0] + ", " + getAffPoint()[1] + ")";
+    }
 }

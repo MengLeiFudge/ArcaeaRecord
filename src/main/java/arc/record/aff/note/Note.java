@@ -11,7 +11,11 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
+import static arc.record.SettingsAndUtils.TOUCH_SAMPLE_FREQUENCY;
+
 /**
+ * 一个Note有多个判定点，有多个触控点。
+ *
  * @author MengLeiFudge
  */
 @Data
@@ -29,7 +33,7 @@ public abstract class Note implements Serializable, Comparable<Note> {
     /**
      * 根据按键所在 timing 的 bpm 计算的判定块间隔.
      */
-    float beatTime = 0;
+    float beatTime;
 
     /**
      * 返回该键型对应的总 note 数.
@@ -73,10 +77,36 @@ public abstract class Note implements Serializable, Comparable<Note> {
         }
         actionDownList = new ArrayList<>();
         double[] xy;
-        // beatTime除以2是为了确保不会miss
-        for (float t = t1; t < t2; t += beatTime / 4) {
-            xy = getAffPoint((int) t);
-            actionDownList.add(new Action(xy[0], xy[1], (int) t));
+        if (this instanceof Click || this instanceof ArcTap) {
+            xy = getAffPoint(t1);
+            actionDownList.add(new Action(xy[0], xy[1], t1));
+        } else if (this instanceof Hold) {
+            float timeAdd = beatTime / TOUCH_SAMPLE_FREQUENCY;
+            for (float t = t1; t < t2; t += timeAdd) {
+                xy = getAffPoint((int) t);
+                actionDownList.add(new Action(xy[0], xy[1], (int) t));
+            }
+        } else if (this instanceof Arc arc) {
+            if (getNoteCount() == 0) {
+                return;
+            } else if (getNoteCount() == 1 && arc.easing.equals("s") && t2 - t1 < 200) {
+                // 对于超短蛇需要额外处理
+                // 一个为了 merge 的action
+                xy = getAffPoint(t1);
+                actionDownList.add(new Action(xy[0], xy[1], t1));
+                // 后面使用中点
+                float timeAdd = (t2 - t1) / (TOUCH_SAMPLE_FREQUENCY + 1);
+                xy = getAffPoint((t1 + t2) / 2);
+                for (float t = t1 + 1; t < t2; t += timeAdd) {
+                    actionDownList.add(new Action(xy[0], xy[1], (int) t));
+                }
+            } else {
+                float timeAdd = beatTime / TOUCH_SAMPLE_FREQUENCY;
+                for (float t = t1; t < t2; t += timeAdd) {
+                    xy = getAffPoint((int) t);
+                    actionDownList.add(new Action(xy[0], xy[1], (int) t));
+                }
+            }
         }
         xy = getAffPoint(t2);
         actionUp = new Action(xy[0], xy[1], t2);
@@ -92,6 +122,19 @@ public abstract class Note implements Serializable, Comparable<Note> {
             actions.add(actionUp);
         }
         return actions;
+    }
+
+    public Action getFirstAction() {
+        if (actionDownList == null) {
+            throw new IllegalStateException("获取前需要初始化！");
+        }
+        if (actionDownList.size() > 0) {
+            return actionDownList.get(0);
+        }
+        if (actionUp != null) {
+            return actionUp;
+        }
+        return null;
     }
 
     /**
@@ -110,16 +153,20 @@ public abstract class Note implements Serializable, Comparable<Note> {
      * @param manager 管理作的实例对象
      */
     public static void mergeNotes(Note a, Note b, UnionFind<Action> manager) {
-        if ((a instanceof Click || a instanceof ArcTap) && b instanceof Arc) {
+        a.actionUp = null;
+        b.actionDownList.removeIf(o -> o.t() <= a.actionDownList.get(0).t());
+        manager.merge(a.getFirstAction(), b.getFirstAction());
+        /*if ((a instanceof Click || a instanceof ArcTap) && b instanceof Arc) {
             a.actionUp = null;
             b.actionDownList.removeIf(o -> o.t() <= a.actionDownList.get(0).t());
-            manager.merge(a.getActions(), b.getActions());
+            manager.merge(a.getFirstAction(), b.getFirstAction());
         } else if ((a instanceof Hold || a instanceof Arc) && b instanceof Arc) {
             a.actionUp = null;
-            manager.merge(a.getActions(), b.getActions());
+            b.actionDownList.removeIf(o -> o.t() <= a.actionDownList.get(0).t());
+            manager.merge(a.getFirstAction(), b.getFirstAction());
         } else {
             throw new IllegalStateException("未知组合键型混合");
-        }
+        }*/
     }
 
     @Override

@@ -157,4 +157,9 @@ public class Arc extends Note {
         }
         return list;
     }
+
+    @Override
+    public String toString() {
+        return "arc" + color + " t:[" + t1 + ", " + t2 + "] xy1(" + x1 + ", " + y1 + ") xy2(" + x2 + ", " + y2 + ")";
+    }
 }
