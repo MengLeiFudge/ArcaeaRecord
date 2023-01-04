@@ -31,6 +31,8 @@ public class Main {
     //todo: 略微左移返回按键的位置
     //todo: 添加note转回aff的功能，便于调试
     //todo: 添加slf4j+logback的支持
+    //修复 转换进度：212.55%
+    //获取全部谱面需要的时间太久，如何优化
 
     public static final Scanner sc = new Scanner(System.in).useDelimiter("\n");
 
