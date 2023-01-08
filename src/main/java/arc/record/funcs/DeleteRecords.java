@@ -1,12 +1,13 @@
 package arc.record.funcs;
 
-import arc.record.SettingsAndUtils;
+import arc.record.Utils;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.Objects;
 
 import static arc.record.Main.sc;
+import static arc.record.Settings.AFF_DIR;
 
 /**
  * @author MengLeiFudge
@@ -25,21 +26,15 @@ public class DeleteRecords {
 
     private void init() {
         System.out.println("输入要删除脚本的文件夹路径");
-        File defFile = SettingsAndUtils.AFF_DIR;
+        File defFile = AFF_DIR;
         System.out.println("1表示 " + defFile);
-        System.out.println("2表示 " + SettingsAndUtils.VMS_DIR);
+        System.out.println("2表示 " + Utils.VMS_DIR);
         System.out.println("回车表示1，输入其他表示指定目录");
         String s = sc.nextLine();
         switch (s) {
-            case "":
-            case "1":
-                destDir = defFile;
-                break;
-            case "2":
-                destDir = SettingsAndUtils.VMS_DIR;
-                break;
-            default:
-                destDir = new File(s);
+            case "", "1" -> destDir = defFile;
+            case "2" -> destDir = Utils.VMS_DIR;
+            default -> destDir = new File(s);
         }
         try {
             destDir = destDir.getCanonicalFile();

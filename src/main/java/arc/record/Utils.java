@@ -15,41 +15,17 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Locale;
 
+import static arc.record.Settings.ARC_DIR;
+
 /**
  * 设定 arc 文件夹的位置，以及其他参数.
- * <p>
- * 在开始前，应按照如下步骤配置：
- * <ul>
- *     <li>修改 {@link #ARC_DIR} 至合适的目录</li>
- *     <li>将最新的 arcaea 安装包（如 arcaea_4.1.0c.apk）放至 {@link #ARC_DIR} 内</li>
- *     <li>用雷电模拟器下载全部的歌曲，并将 dl 文件夹移动至 Pictures 内</li>
- *     <li>打开雷电模拟器脚本路径，将其复制到 {@link #VMS_DIR}</li>
- *     <li>运行程序！enjoy it！</li>
- * </ul>
  *
  * @author MengLeiFudge
  */
-public class SettingsAndUtils {
-    private SettingsAndUtils() {
+public class Utils {
+    private Utils() {
     }
 
-    /**
-     * 指示是否为调试模式.
-     * <p>
-     * 调试模式下会生成中间的处理按键列表
-     */
-    public static final boolean DEBUG_MODE = false;
-
-    /**
-     * arc 文件存放的根目录.
-     */
-    public static final File ARC_DIR = new File("D:/arc");
-    //public static final File ARC_DIR = new File("C:\\机台源码勿动\\MLJ\\arc");
-
-    /**
-     * 官谱路径，以歌曲 sid 为文件夹存储谱面、音乐、曲绘等.
-     */
-    public static final File AFF_DIR = new File(ARC_DIR, "官谱");
 
     /**
      * arcaea 的 apk 安装包.
@@ -82,8 +58,8 @@ public class SettingsAndUtils {
     /**
      * 脚本文件夹所在的根目录.
      */
-    public static final File VMS_DIR = new File("F:/leidian/vms");
-    //public static final File VMS_DIR = new File("C:\\机台源码勿动\\MLJ\\arc\\record");
+    //public static final File VMS_DIR = new File("F:/leidian/vms");
+    public static final File VMS_DIR = new File("C:\\机台源码勿动\\MLJ\\arc\\record");
 
     /**
      * JVM 可用的最大 CPU 数量.

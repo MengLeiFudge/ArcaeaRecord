@@ -20,8 +20,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 
-import static arc.record.SettingsAndUtils.DIFFICULTY_STR;
-import static arc.record.SettingsAndUtils.getProcessedTitle;
+import static arc.record.Utils.DIFFICULTY_STR;
+import static arc.record.Utils.getProcessedTitle;
 
 /**
  * 谱面文件信息类，具体规则参考中文wiki的谱面格式页面（问题答案为ifi）.

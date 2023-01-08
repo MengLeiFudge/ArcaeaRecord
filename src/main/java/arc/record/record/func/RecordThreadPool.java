@@ -36,11 +36,11 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static arc.record.SettingsAndUtils.CLICK_TIME;
-import static arc.record.SettingsAndUtils.DEBUG_MODE;
-import static arc.record.SettingsAndUtils.EFFECT_TIME;
-import static arc.record.SettingsAndUtils.THREAD_NUM;
-import static arc.record.SettingsAndUtils.TOUCH_SAMPLE_FREQUENCY;
+import static arc.record.Settings.DEBUG_MODE;
+import static arc.record.Utils.CLICK_TIME;
+import static arc.record.Utils.EFFECT_TIME;
+import static arc.record.Utils.THREAD_NUM;
+import static arc.record.Utils.TOUCH_SAMPLE_FREQUENCY;
 import static java.lang.Thread.sleep;
 
 /**
@@ -74,14 +74,24 @@ public class RecordThreadPool implements Runnable {
         }
     }
 
+    public static void process(Map<File, Map<Integer, List<Request>>> processMap) {
+        Map<File, Aff> affMap = new HashMap<>();
+        for (var file : processMap.keySet()) {
+            Aff aff = new Aff(file);
+            affMap.put(file, aff);
+        }
+        process(affMap, processMap);
+    }
+
     /**
      * 多线程生成脚本.
      *
      * @param processMap 处理需求
      */
-    public static void process(Map<File, Map<Integer, List<Request>>> processMap) {
+    public static void process(Map<File, Aff> affMap, Map<File, Map<Integer, List<Request>>> processMap) {
         long startTime = System.currentTimeMillis();
         // 初始化数据，判断是否需要处理
+        RecordThreadPool.affMap = affMap;
         RecordThreadPool.processMap = processMap;
         processFileList = processMap.keySet().stream().toList();
         processedNum = 0;
@@ -127,6 +137,7 @@ public class RecordThreadPool implements Runnable {
     }
 
     private final int threadNo;
+    private static Map<File, Aff> affMap;
     private static Map<File, Map<Integer, List<Request>>> processMap;
     private static List<File> processFileList;
     private static int processedNum;
@@ -137,23 +148,26 @@ public class RecordThreadPool implements Runnable {
     }
 
     /**
-     * // 1.修改note列表，例如长条与蛇判定重合的处理、miss/小p的数目
-     * // 2.构建一个ActionManager对象，初始化所有note
-     * // 3.使用Note.mergeNotes(Note a, Note b)合并两个note，
-     * // 需要处理各个note的list -> note a的保留，b的改为空，全部加到a中，然后排序？
-     * // 【在note中加一个前继note指向？】
-     * // 并在ActionManager中合并这两个list -> 调用并查集的merge
-     * // 【合并两个note，一方面是操作上的增删，另一方面是将所有操作设为同一id】
-     * // 4.对每组合并的note分配一个id，作为触控id
-     * // 5.从aff.getRatio46k获取46k比例，从处理要求获取分辨率等，计算出触控实际位置，构建List<SimpleAction>
-     * // 6.利用List<SimpleAction>生成最终脚本
+     * 某个线程处理某个谱面文件的所有脚本请求.
+     * <p>
+     * 步骤如下：
+     * <ul>
+     *     <li>长条与蛇判定重合时，去除长条（注意长条不能完全去除，需要保留一定头部）</li>
+     *     <li>遍历该谱面文件的所有脚本请求，根据 miss/小p 的数目生成不同的按键列表</li>
+     *     <li>创建并查集，将每个按键转为2个及以上的操作，并关联每个按键的所有操作</li>
+     *     <li>将谱面中应该使用同一触控的蛇（指中途不能抬手的情形）进行关联</li>
+     *     <li>将谱面中应该使用同一触控的单点（指天键或地键）与邻近蛇头进行关联</li>
+     *     <li>将谱面中应该使用同一触控的长条尾与邻近蛇头进行关联</li>
+     *     <li>根据是否需要镜像等设定，生成不同的脚本</li>
+     * </ul>
      */
     @Override
     public void run() {
         for (int i = 0; i < processFileList.size(); i++) {
             if (i % THREAD_NUM == threadNo) {
                 File affFile = processFileList.get(i);
-                Aff aff = new Aff(affFile);
+                //Aff aff = new Aff(affFile);
+                Aff aff = affMap.get(affFile);
                 Map<Integer, List<Request>> map = processMap.get(affFile);
                 List<Note> baseNoteList = aff.getNoteList();
                 // 非DEBUG：dir/testify_BYD_0L0小.record
@@ -175,7 +189,7 @@ public class RecordThreadPool implements Runnable {
                     File dir1 = new File(dir0, miss + "L" + noShinyPure + "小");
                     List<Note> noteList = SerializationUtils.clone((ArrayList<Note>) baseNoteList);
                     modifyMP(noteList, miss, noShinyPure);
-                    // 例如 last eternity 的前三个谱面都没有按键
+                    // 空谱面不进行处理，如 last eternity 的前三个难度
                     if (!noteList.isEmpty()) {
                         UnionFind<Action> actionUnionFind = new UnionFind<>();
                         for (var note : noteList) {
@@ -204,7 +218,7 @@ public class RecordThreadPool implements Runnable {
                         }
                     }
                     synchronized (RecordThreadPool.class) {
-                        processedNum += map.size();
+                        processedNum += map.get(x).size();
                     }
                 }
             }

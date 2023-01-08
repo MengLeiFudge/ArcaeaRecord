@@ -1,6 +1,6 @@
 package arc.record.funcs;
 
-import arc.record.SettingsAndUtils;
+import arc.record.Utils;
 import arc.record.aff.Aff;
 import arc.record.record.func.RecordThreadPool;
 import arc.record.record.model.Mirror;
@@ -25,9 +25,9 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static arc.record.Main.sc;
-import static arc.record.SettingsAndUtils.AFF_DIR;
-import static arc.record.SettingsAndUtils.DEBUG_MODE;
-import static arc.record.SettingsAndUtils.VMS_DIR;
+import static arc.record.Settings.AFF_DIR;
+import static arc.record.Settings.DEBUG_MODE;
+import static arc.record.Utils.VMS_DIR;
 
 /**
  * 通过用户输入，将谱面文件转为脚本.
@@ -66,6 +66,7 @@ public class AffToRecord {
         System.out.println("回车表示一键生成脚本");
         System.out.println("输入其他内容表示自定义生成脚本");
         String s = sc.nextLine();
+        System.out.println("查找中....");
         if ("".equals(s)) {
             auto();
         } else if (".".equals(s)) {
@@ -77,8 +78,14 @@ public class AffToRecord {
             System.out.println("查找完毕，未找到需要处理的谱面文件！");
             return;
         }
-        System.out.println("查找完毕，共找到 " + processMap.size() + " 个谱面文件！");
-        RecordThreadPool.process(processMap);
+        int targetNum = 0;
+        for (var map : processMap.values()) {
+            for (var list : map.values()) {
+                targetNum += list.size();
+            }
+        }
+        System.out.println("查找完毕，" + processMap.size() + " 个谱面文件共计生成 " + targetNum + " 个脚本请求");
+        RecordThreadPool.process(affMap, processMap);
         if ("".equals(s)) {
             System.out.println("开始将脚本打包至 zip...");
             autoZip();
@@ -165,9 +172,6 @@ public class AffToRecord {
     private void test() {
         if (DEBUG_MODE) {
             System.out.println("输入文件夹名");
-            //affDir = new File(AFF_DIR, "qualia");
-            //affDir = new File(AFF_DIR, "dl_testify");
-            //affDir = new File(AFF_DIR, "dl_heavensdoor");
             affDir = new File(AFF_DIR, sc.nextLine());
         } else {
             affDir = AFF_DIR;
@@ -269,6 +273,11 @@ public class AffToRecord {
     private static final Pattern P_AFF = Pattern.compile("[0-3]\\.aff");
 
     /**
+     * 临时存放所有谱面文件与 Aff 实例的对应.
+     */
+    private final Map<File, Aff> affMap = new HashMap<>();
+
+    /**
      * 查找所有符合条件的谱面，并加入处理列表.
      *
      * @param file aff 文件或包含 aff 文件的文件夹
@@ -283,7 +292,8 @@ public class AffToRecord {
                     || file.getName().equals("ignotusafterburn2")
                     || file.getName().equals("redandblueandgreen")
                     || file.getName().equals("singularityvvvip")
-                    || file.getName().equals("overdead")) {
+                    || file.getName().equals("overdead")
+                    || file.getName().equals("mismal")) {
                 return;
             }
             File[] listFiles = file.listFiles();
@@ -302,7 +312,13 @@ public class AffToRecord {
         if (difficulty < minDifficulty || difficulty > maxDifficulty) {
             return;
         }
-        Aff aff = new Aff(file);
+        Aff aff;
+        if (affMap.containsKey(file)) {
+            aff = affMap.get(file);
+        } else {
+            aff = new Aff(file);
+            affMap.put(file, aff);
+        }
         int note = aff.getNoteCount();
         int miss = missAndMinPure.getMissNum(note);
         int noShinyPure = missAndMinPure.getMinPureNum(note);
@@ -347,7 +363,7 @@ public class AffToRecord {
 
     private void autoZip() {
         String version = null;
-        File apk = SettingsAndUtils.getApk();
+        File apk = Utils.getApk();
         if (apk != null) {
             String apkName = apk.getName();
             Matcher matcher = P_APK.matcher(apkName);

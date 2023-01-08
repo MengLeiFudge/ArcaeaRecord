@@ -1,6 +1,6 @@
 package arc.record.funcs;
 
-import arc.record.SettingsAndUtils;
+import arc.record.Utils;
 import arc.record.aff.Aff;
 
 import java.io.BufferedReader;
@@ -11,7 +11,8 @@ import java.io.FileWriter;
 import java.io.IOException;
 
 import static arc.record.Main.sc;
-import static arc.record.SettingsAndUtils.DIFFICULTY_STR;
+import static arc.record.Settings.AFF_DIR;
+import static arc.record.Utils.DIFFICULTY_STR;
 
 /**
  * @author MengLeiFudge
@@ -39,7 +40,7 @@ public class CreateUnlockRecords {
 
     private boolean init() {
         System.out.println("输入 Tempestissimo 谱面所在的【文件夹】路径");
-        File defFile = new File(SettingsAndUtils.AFF_DIR, "dl_tempestissimo");
+        File defFile = new File(AFF_DIR, "dl_tempestissimo");
         System.out.println("回车表示 " + defFile);
         String s = sc.nextLine();
         File affDir = s.equals("") ? defFile : new File(s);
@@ -52,7 +53,7 @@ public class CreateUnlockRecords {
             affs[i] = new Aff(affFile);
         }
         System.out.println("输入要生成脚本的文件夹路径");
-        defFile = new File(SettingsAndUtils.VMS_DIR, "tempestissimo解锁脚本");
+        defFile = new File(Utils.VMS_DIR, "tempestissimo解锁脚本");
         System.out.println("回车表示 " + defFile);
         s = sc.nextLine();
         recordDir = s.equals("") ? defFile : new File(s);

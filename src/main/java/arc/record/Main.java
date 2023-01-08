@@ -4,7 +4,7 @@ import arc.record.funcs.AffToRecord;
 import arc.record.funcs.CreateUnlockRecords;
 import arc.record.funcs.DeleteRecords;
 import arc.record.funcs.GetAllFiles;
-import arc.record.funcs.Test;
+import arc.record.funcs.ModifySt3DB;
 
 import java.util.Scanner;
 
@@ -24,15 +24,15 @@ import java.util.Scanner;
  * @author MengLeiFudge
  */
 public class Main {
-    //todo: 对于beatCount<=2的蛇/长条，判定点的计算应该使用其中点（其实也不是很准，应该是小于等于1用中点，其余情况使用count*time的位置）
     //todo: 修改模拟器坐标计算逻辑，扩大4/6k参数，提高精度
     //todo: 增加4:3分辨率适配
-    //todo: 添加结尾暂停功能，便于调试
     //todo: 略微左移返回按键的位置
+
+    //todo: 对于beatCount<=2的蛇/长条，判定点的计算应该使用其中点（其实也不是很准，应该是小于等于1用中点，其余情况使用count*time的位置）
+    //todo: 添加结尾暂停功能，便于调试
     //todo: 添加note转回aff的功能，便于调试
     //todo: 添加slf4j+logback的支持
-    //修复 转换进度：212.55%
-    //获取全部谱面需要的时间太久，如何优化
+    //todo: 利用sqlite数据库，以及aw的查分器，修改最高分
 
     public static final Scanner sc = new Scanner(System.in).useDelimiter("\n");
 
@@ -44,17 +44,18 @@ public class Main {
             System.out.println("2.谱面文件转换为脚本");
             System.out.println("3.生成 Tempestissimo/Testify 相关解锁脚本");
             System.out.println("4.删除指定文件夹（包括子文件夹）内所有脚本");
+            System.out.println("5.修改本地分数存档st3数据库");
             System.out.println("0.结束");
             switch (sc.nextLine()) {
                 case "1" -> new GetAllFiles().process();
                 case "2" -> new AffToRecord().process();
                 case "3" -> new CreateUnlockRecords().process();
                 case "4" -> new DeleteRecords().process();
+                case "5" -> new ModifySt3DB().process();
                 case "0" -> {
                     System.out.println("喜欢本项目的话，请给萌泪点个star！");
                     return;
                 }
-                case "." -> new Test().process();
                 default -> {
                     System.out.println("输入有误！");
                     System.out.println();
