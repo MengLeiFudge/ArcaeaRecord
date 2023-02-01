@@ -1,6 +1,5 @@
 package arc.record.funcs;
 
-import arc.record.Utils;
 import org.apache.commons.io.FileUtils;
 
 import java.io.File;
@@ -17,7 +16,10 @@ import java.util.zip.ZipFile;
 
 import static arc.record.Main.sc;
 import static arc.record.Settings.AFF_DIR;
-import static arc.record.Utils.SONG_LIST;
+import static arc.record.Settings.CHAR_DIR;
+import static arc.record.Settings.DL_DIR;
+import static arc.record.Settings.SONG_LIST;
+import static arc.record.Settings.getApk;
 
 /**
  * @author MengLeiFudge
@@ -54,7 +56,7 @@ public class GetAllFiles {
 
     private void init() {
         System.out.println("输入 dl 文件夹路径");
-        File defFile = Utils.getDlDir();
+        File defFile = DL_DIR;
         System.out.println("回车表示 " + defFile);
         String s = sc.nextLine();
         dlDir = s.equals("") ? defFile : new File(s);
@@ -68,7 +70,7 @@ public class GetAllFiles {
         }
 
         System.out.println("输入 arc apk 路径");
-        defFile = Utils.getApk();
+        defFile = getApk();
         System.out.println("回车表示 " + defFile);
         s = sc.nextLine();
         apk = s.equals("") ? defFile : new File(s);
@@ -80,7 +82,7 @@ public class GetAllFiles {
         affDir = s.equals("") ? defFile : new File(s);
 
         System.out.println("输入目标搭档图片文件夹路径");
-        defFile = Utils.getCharDir();
+        defFile = CHAR_DIR;
         System.out.println("回车表示 " + defFile);
         s = sc.nextLine();
         charDir = s.equals("") ? defFile : new File(s);

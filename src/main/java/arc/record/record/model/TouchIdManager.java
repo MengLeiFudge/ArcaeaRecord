@@ -4,7 +4,7 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
-import static arc.record.Utils.INTERVAL_TIME;
+import static arc.record.Settings.INTERVAL_TIME;
 
 /**
  * 该类可根据传入的指定时间段，返回最小操作 id.

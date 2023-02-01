@@ -5,8 +5,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.function.Function;
 
-import static arc.record.Utils.CLICK_TIME;
-import static arc.record.Utils.CONTINUE_TIME;
+import static arc.record.Settings.CLICK_TIME;
+import static arc.record.Settings.CONTINUE_TIME;
 
 /**
  * 分辨率，具有 16:9 和 4:3 两种比例的多个常用分辨率.

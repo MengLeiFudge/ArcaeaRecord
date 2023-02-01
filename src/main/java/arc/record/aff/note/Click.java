@@ -3,7 +3,7 @@ package arc.record.aff.note;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
-import static arc.record.Utils.CLICK_TIME;
+import static arc.record.Settings.CLICK_TIME;
 
 /**
  * @author MengLeiFudge

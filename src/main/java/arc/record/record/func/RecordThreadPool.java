@@ -36,11 +36,11 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static arc.record.Settings.CLICK_TIME;
 import static arc.record.Settings.DEBUG_MODE;
-import static arc.record.Utils.CLICK_TIME;
-import static arc.record.Utils.EFFECT_TIME;
+import static arc.record.Settings.EFFECT_TIME;
+import static arc.record.Settings.TOUCH_SAMPLE_FREQUENCY;
 import static arc.record.Utils.THREAD_NUM;
-import static arc.record.Utils.TOUCH_SAMPLE_FREQUENCY;
 import static java.lang.Thread.sleep;
 
 /**
@@ -470,61 +470,78 @@ public class RecordThreadPool implements Runnable {
      * @param miss        目标 miss 数
      * @param noShinyPure 目标 小p 数
      */
-    private void modifyMP(List<Note> noteList, int miss, int noShinyPure) {
-        List<Note> missClicks;
-        List<Note> noShinyPureClicks;
-        int lastMissNum = 0;
+    private void modifyMP(List<Note> noteList, final int miss, int noShinyPure) {
+        // 获取 noteList 中所有的地键和天键，只有单点会被修改
+        List<Note> clicks = noteList.stream().filter(o -> o instanceof Click || o instanceof ArcTap).toList();
+        // 可转为 miss/小p 的条件：其余所有按键都与该键在时间、位置上有一定距离
+        // 如果纵连中间移除掉一个，可能导致后面的键判定于被移除的键，所以有这样的要求
+        // 下面这个存储所有可以修改的click
+        List<Note> canModifyClicks = new ArrayList<>();
+        // 遍历，寻找所有可以修改的click
+        for (Note c1 : clicks) {
+            boolean canBeModified = true;
+            for (Note c2 : clicks) {
+                if (c1 == c2) {
+                    continue;
+                }
+                if (Math.abs(c1.getT1() - c2.getT1()) <= EFFECT_TIME) {
+                    // 如果时间接近，需要判断距离是否接近（模拟器上的距离小于模拟器宽的 0.09375）
+                    double[] xy1 = c1.getAffPoint();
+                    double[] xy2 = c2.getAffPoint();
+                    int[] XY1 = Resolution.R16_9_1280_720.convertToXY(xy1[0], xy1[1], 0);
+                    int[] XY2 = Resolution.R16_9_1280_720.convertToXY(xy2[0], xy2[1], 0);
+                    double dis = Math.sqrt(Math.pow(XY1[0] - XY2[0], 2) + Math.pow(XY1[1] - XY2[1], 2));
+                    double judgeRange = Resolution.R16_9_1280_720.getMaxX() * 0.09375;
+                    if (dis <= judgeRange) {
+                        // 时间、距离都接近，则该键不能被修改
+                        canBeModified = false;
+                        break;
+                    }
+                }
+            }
+            if (canBeModified) {
+                canModifyClicks.add(c1);
+            }
+        }
+        if (canModifyClicks.isEmpty()) {
+            return;
+        }
+        // 暂存将会转为 miss 的 note
+        List<Note> missClicks = new ArrayList<>();
+        // 暂存将会转为 小p 的 note
+        List<Note> noShinyPureClicks = new ArrayList<>();
+        // 由于偏移也不一定小p（模拟器原因，执行时间有偏差），这里适当增加小p数
+        noShinyPure *= 1.2;
+        int startTime = canModifyClicks.get(0).getT1();
+        int endTime = canModifyClicks.get(canModifyClicks.size() - 1).getT1();
+        int fullTimeSpan = endTime - startTime;
+        // 本次循环的目标 miss 数
+        int targetMissNum = miss;
+        // 循环，直至均分时的 miss 数达标
         while (true) {
-            // 由于偏移也不一定小p（模拟器原因，执行时间有偏差），这里适当增加小p数
-            noShinyPure *= 1.6;
-            // 获取 noteList 中所有的地键和天键，只有单点会被修改
-            List<Note> clicks = noteList.stream().filter(o -> o instanceof Click || o instanceof ArcTap).toList();
-            // 暂存将会转为 miss 的 note
-            missClicks = new ArrayList<>();
-            // 暂存将会转为 小p 的 note
-            noShinyPureClicks = new ArrayList<>();
-            // 可转为 miss/小p 的条件：其余所有按键都与该键在时间、位置上有一定距离
-            // 如果纵连中间移除掉一个，可能导致后面的键判定于被移除的键，所以有这样的要求
-            for (Note c1 : clicks) {
+            missClicks.clear();
+            noShinyPureClicks.clear();
+            double noteTimeSpan = fullTimeSpan * 1.0 / Math.max(1, targetMissNum);
+            // 循环，直至所有 note 都已分配至 miss
+            for (Note c1 : canModifyClicks) {
+                // 计算出此时应该至少有多少 miss 的 note
+                int currNeedMissNum = (int) ((c1.getT1() - startTime) / noteTimeSpan) + 1;
+                if (missClicks.size() < currNeedMissNum && missClicks.size() < miss) {
+                    missClicks.add(c1);
+                } else if (noShinyPureClicks.size() < noShinyPure) {
+                    noShinyPureClicks.add(c1);
+                }
                 if (missClicks.size() == miss && noShinyPureClicks.size() == noShinyPure) {
                     break;
                 }
-                boolean canBeModified = true;
-                for (Note c2 : clicks) {
-                    if (c1 == c2) {
-                        continue;
-                    }
-                    if (Math.abs(c1.getT1() - c2.getT1()) <= EFFECT_TIME) {
-                        // 如果时间接近，需要判断距离是否接近（模拟器上的距离小于模拟器宽的 0.09375）
-                        double[] xy1 = c1.getAffPoint();
-                        double[] xy2 = c2.getAffPoint();
-                        int[] XY1 = Resolution.R16_9_1280_720.convertToXY(xy1[0], xy1[1], 0);
-                        int[] XY2 = Resolution.R16_9_1280_720.convertToXY(xy2[0], xy2[1], 0);
-                        double dis = Math.sqrt(Math.pow(XY1[0] - XY2[0], 2) + Math.pow(XY1[1] - XY2[1], 2));
-                        double judgeRange = Resolution.R16_9_1280_720.getMaxX() * 0.09375;
-                        if (dis <= judgeRange) {
-                            // 时间、距离都接近，则该键不能被修改
-                            canBeModified = false;
-                            break;
-                        }
-                    }
-                }
-                if (canBeModified) {
-                    if (missClicks.size() < miss) {
-                        missClicks.add(c1);
-                    } else if (noShinyPureClicks.size() < noShinyPure) {
-                        noShinyPureClicks.add(c1);
-                    }
-                }
             }
-            if (missClicks.size() == miss) {
+            if (missClicks.size() == miss && noShinyPureClicks.size() == noShinyPure) {
                 break;
             }
-            if (lastMissNum == missClicks.size()) {
+            if (targetMissNum >= canModifyClicks.size()) {
                 break;
             }
-            miss++;
-            lastMissNum = missClicks.size();
+            targetMissNum++;
         }
         // 处理 miss
         noteList.removeAll(missClicks);
@@ -532,7 +549,7 @@ public class RecordThreadPool implements Runnable {
         // 指示下一个变为 小p 的按键应该变为 early 还是 late
         boolean nextToEarly = true;
         for (var note : noShinyPureClicks) {
-            note.setT1(nextToEarly ? note.getT1() - 27 : note.getT1() + 27);
+            note.setT1(nextToEarly ? note.getT1() - 30 : note.getT1() + 30);
             note.setT2(note.getT1() + CLICK_TIME);
             nextToEarly = !nextToEarly;
         }

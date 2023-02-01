@@ -1,6 +1,5 @@
 package arc.record.funcs;
 
-import arc.record.Utils;
 import arc.record.aff.Aff;
 import arc.record.record.func.RecordThreadPool;
 import arc.record.record.model.Mirror;
@@ -27,7 +26,8 @@ import java.util.zip.ZipOutputStream;
 import static arc.record.Main.sc;
 import static arc.record.Settings.AFF_DIR;
 import static arc.record.Settings.DEBUG_MODE;
-import static arc.record.Utils.VMS_DIR;
+import static arc.record.Settings.VMS_DIR;
+import static arc.record.Settings.getApk;
 
 /**
  * 通过用户输入，将谱面文件转为脚本.
@@ -363,7 +363,7 @@ public class AffToRecord {
 
     private void autoZip() {
         String version = null;
-        File apk = Utils.getApk();
+        File apk = getApk();
         if (apk != null) {
             String apkName = apk.getName();
             Matcher matcher = P_APK.matcher(apkName);

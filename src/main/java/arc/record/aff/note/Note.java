@@ -11,7 +11,7 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
-import static arc.record.Utils.TOUCH_SAMPLE_FREQUENCY;
+import static arc.record.Settings.TOUCH_SAMPLE_FREQUENCY;
 
 /**
  * 一个Note有多个判定点，有多个触控点。
