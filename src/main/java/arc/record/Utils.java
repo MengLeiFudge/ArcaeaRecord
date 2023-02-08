@@ -73,7 +73,7 @@ public class Utils {
         return songName.toLowerCase(Locale.ROOT)
                 .replaceAll(":", "：")
                 .replaceAll("\\?", "？")
-                .replaceAll("[\\\\/:*?\"<>|]", "");
+                .replaceAll("[\\\\/:*?\"<>|]", " ");
     }
 
     public static final String[] DIFFICULTY_STR = {"PST", "PRS", "FTR", "BYD"};
