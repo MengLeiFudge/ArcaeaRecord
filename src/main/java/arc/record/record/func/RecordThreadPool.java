@@ -1,5 +1,22 @@
 package arc.record.record.func;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.text.DecimalFormat;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import arc.record.aff.Aff;
 import arc.record.aff.action.Action;
 import arc.record.aff.note.Arc;
@@ -17,23 +34,6 @@ import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.SerializationUtils;
-
-import java.io.File;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.text.DecimalFormat;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static arc.record.Settings.CLICK_TIME;
 import static arc.record.Settings.DEBUG_MODE;
@@ -188,8 +188,19 @@ public class RecordThreadPool implements Runnable {
                     File dir1 = new File(dir0, miss + "L" + noShinyPure + "小");
                     List<Note> noteList = SerializationUtils.clone((ArrayList<Note>) baseNoteList);
                     modifyMP(noteList, miss, noShinyPure);
-                    // 空谱面不进行处理，如 last eternity 的前三个难度
-                    if (!noteList.isEmpty()) {
+                    if (noteList.isEmpty()) {
+                        // last eternity 的前三个难度是无需处理的空谱面，但是其他谱面空则需要提示异常
+                        boolean isLastEternity012 = false;
+                        if (affFile.getParentFile().getName().equals("dl_lasteternity")) {
+                            int difficult = Integer.parseInt(affFile.getParentFile().getName().substring(0, 1));
+                            if (difficult < 3) {
+                                isLastEternity012 = true;
+                            }
+                        }
+                        if (!isLastEternity012) {
+                            System.out.println("未在 " + affFile.getAbsolutePath() + " 内发现Note，需确认谱面文件状态！");
+                        }
+                    } else {
                         UnionFind<Action> actionUnionFind = new UnionFind<>();
                         for (var note : noteList) {
                             note.initActions(actionUnionFind);

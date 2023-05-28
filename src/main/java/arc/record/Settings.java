@@ -24,14 +24,12 @@ public class Settings {
     /**
      * 脚本文件夹所在的根目录.
      */
-    public static final File VMS_DIR = new File("F:/leidian/vms");
-    //public static final File VMS_DIR = new File("C:\\机台源码勿动\\MLJ\\arc\\record");
+    public static final File VMS_DIR = new File("F:\\leidian\\LDPlayer9\\vms");
 
     /**
      * arc 文件存放的根目录.
      */
-    public static final File ARC_DIR = new File("D:/arc");
-    //public static final File ARC_DIR = new File("C:\\机台源码勿动\\MLJ\\arc");
+    public static final File ARC_DIR = new File("D:\\arc");
 
     /**
      * 官谱路径，以歌曲 sid 为文件夹存储谱面、音乐、曲绘等.
@@ -56,7 +54,7 @@ public class Settings {
      * 从模拟器中复制出来的 dl 文件夹.
      */
     public static final File DL_DIR = new File("C:/Users/" + System.getProperty("user.name")
-            + "/Documents/leidian/Pictures/dl");
+            + "/Documents/leidian9/Pictures/dl");
 
     /**
      * 搭档全身图、头像文件夹.
