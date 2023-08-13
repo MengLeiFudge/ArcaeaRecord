@@ -190,13 +190,8 @@ public class RecordThreadPool implements Runnable {
                     modifyMP(noteList, miss, noShinyPure);
                     if (noteList.isEmpty()) {
                         // last eternity 的前三个难度是无需处理的空谱面，但是其他谱面空则需要提示异常
-                        boolean isLastEternity012 = false;
-                        if (affFile.getParentFile().getName().equals("dl_lasteternity")) {
-                            int difficult = Integer.parseInt(affFile.getParentFile().getName().substring(0, 1));
-                            if (difficult < 3) {
-                                isLastEternity012 = true;
-                            }
-                        }
+                        boolean isLastEternity012 = affFile.getParentFile().getName().equals("dl_lasteternity")
+                                && Integer.parseInt(affFile.getName().substring(0, 1)) < 3;
                         if (!isLastEternity012) {
                             System.out.println("未在 " + affFile.getAbsolutePath() + " 内发现Note，需确认谱面文件状态！");
                         }
