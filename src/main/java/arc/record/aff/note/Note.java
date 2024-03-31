@@ -1,15 +1,15 @@
 package arc.record.aff.note;
 
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
+
 import arc.record.aff.action.Action;
 import arc.record.utils.UnionFind;
 import lombok.AccessLevel;
 import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
-
-import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.List;
 
 import static arc.record.Settings.TOUCH_SAMPLE_FREQUENCY;
 

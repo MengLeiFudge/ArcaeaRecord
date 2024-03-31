@@ -1,11 +1,11 @@
 package arc.record.aff;
 
-import arc.record.aff.note.Note;
-import arc.record.aff.timing.Timing;
-
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+
+import arc.record.aff.note.Note;
+import arc.record.aff.timing.Timing;
 
 /**
  * @author MengLeiFudge

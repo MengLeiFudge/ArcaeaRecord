@@ -1,7 +1,5 @@
 package arc.record.funcs;
 
-import org.apache.commons.io.FileUtils;
-
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -13,6 +11,8 @@ import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+
+import org.apache.commons.io.FileUtils;
 
 import static arc.record.Main.sc;
 import static arc.record.Settings.AFF_DIR;
@@ -95,6 +95,7 @@ public class GetAllFiles {
      * <ul>
      *     <li>aegleseeker aegleseeker_0 aegleseeker_1 aegleseeker_2</li>
      *     <li>antithese antithese_0 antithese_1 antithese_2 antithese_3</li>
+     *     <li>hellohell hellohell_0 hellohell_1 hellohell_2 hellohell_4</li>
      *     <li>arcanaeden arcanaeden_0 arcanaeden_1 arcanaeden_2 arcanaeden_3 arcanaeden_video.mp4 arcanaeden_video_audio.ogg</li>
      *     <li>bookmaker_3</li>
      *     <li>dropdead dropdead_0 dropdead_1 dropdead_2 dropdead_3 dropdead_audio_3</li>
@@ -103,7 +104,7 @@ public class GetAllFiles {
      * 只有第四组、第六组是免费曲的 byd 难度，文件夹为 sid；其余文件夹都为 dl_sid。
      * 所以可以用 sid 变化时的文件名是否带 _ 确定歌曲是不是免费曲。
      * <p>
-     * 文件名转换关系如下（x表示0-3的数字）：
+     * 文件名转换关系如下（x表示0-4的数字）：
      * <ul>
      *     <li>sid -> base.ogg</li>
      *     <li>sid_x -> x.aff</li>
@@ -149,7 +150,7 @@ public class GetAllFiles {
                 if (sid.equals(groupSid)) {
                     switch (info[1]) {
                         // aegleseeker_0 -> 0.aff
-                        case "0", "1", "2", "3" -> newFile = new File(dir, info[1] + ".aff");
+                        case "0", "1", "2", "3", "4" -> newFile = new File(dir, info[1] + ".aff");
                         // dropdead_audio_3 -> 3.ogg
                         case "audio" -> newFile = new File(dir, info[2] + ".ogg");
                         // arcanaeden_video.mp4 -> video.mp4, arcanaeden_video_audio.ogg -> video_audio.ogg

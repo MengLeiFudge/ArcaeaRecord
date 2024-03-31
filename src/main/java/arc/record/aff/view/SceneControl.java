@@ -1,8 +1,8 @@
 package arc.record.aff.view;
 
-import lombok.Data;
-
 import java.io.Serializable;
+
+import lombok.Data;
 
 /**
  * 仅表示参数为 enwidencamera 的语句.

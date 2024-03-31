@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 
+import javax.swing.filechooser.FileSystemView;
+
 /**
  * 程序运行所需配置，如 arc 文件夹位置等.
  *
@@ -24,12 +26,12 @@ public class Settings {
     /**
      * 脚本文件夹所在的根目录.
      */
-    public static final File VMS_DIR = new File("F:\\leidian\\LDPlayer9\\vms");
+    public static final File VMS_DIR = new File("D:\\leidian\\LDPlayer9\\vms");
 
     /**
      * arc 文件存放的根目录.
      */
-    public static final File ARC_DIR = new File("D:\\arc");
+    public static final File ARC_DIR = new File("D:\\Games\\Arcaea");
 
     /**
      * 官谱路径，以歌曲 sid 为文件夹存储谱面、音乐、曲绘等.
@@ -53,8 +55,8 @@ public class Settings {
     /**
      * 从模拟器中复制出来的 dl 文件夹.
      */
-    public static final File DL_DIR = new File("C:/Users/" + System.getProperty("user.name")
-            + "/Documents/leidian9/Pictures/dl");
+    public static final File DL_DIR = new File(FileSystemView.getFileSystemView().getDefaultDirectory().getPath()
+            + "/leidian9/Pictures/dl");
 
     /**
      * 搭档全身图、头像文件夹.
@@ -90,11 +92,11 @@ public class Settings {
     public static final int CLICK_TIME = 100;
 
     /**
-     * 点击继续按钮的抬起时机.
+     * 指示谱面时间戳与脚本时间戳的对应关系.
      * <p>
      * 如果脚本 late 较多，则应减小该值。
      */
-    public static final int CONTINUE_TIME = 6990;
+    public static final int FIRST_NOTE_TIME = 8295;
 
     /**
      * 触控采样频率.
@@ -105,5 +107,5 @@ public class Settings {
      * <p>
      * 该值必须大于等于1。
      */
-    public static final float TOUCH_SAMPLE_FREQUENCY = 8;
+    public static final float TOUCH_SAMPLE_FREQUENCY = 4;
 }

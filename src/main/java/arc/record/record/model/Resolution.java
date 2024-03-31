@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.function.Function;
 
 import static arc.record.Settings.CLICK_TIME;
-import static arc.record.Settings.CONTINUE_TIME;
 
 /**
  * 分辨率，具有 16:9 和 4:3 两种比例的多个常用分辨率.
@@ -69,16 +68,15 @@ public enum Resolution {
         // 多次点击暂停键
         int pauseX = (int) ((is16_9 ? 355.0 : 280.0) * height / 180.0);
         int pauseY = (int) ((is16_9 ? 262.5 : 156.0) * height / 180.0);
-        for (int time = 0; time < 4000; time += 5) {
-            preSimpleActions.add(new SimpleAction(time, time % 20, pauseX, pauseY, true));
-            preSimpleActions.add(new SimpleAction(time + 5, time % 20, pauseX, pauseY, false));
+        for (int time = 0; time < 4997; time += 3) {
+            preSimpleActions.add(new SimpleAction(time, time / 3 % 4, pauseX, pauseY, true));
+            preSimpleActions.add(new SimpleAction(time + 3, time / 3 % 4, pauseX, pauseY, false));
         }
-        // 点击返回键（若脚本 late 多，则增加该值）
+        // 点击返回键
         int continueX = (int) ((is16_9 ? 1657.5 : 1332.0) * height / 180.0);
         int continueY = (int) ((is16_9 ? 1605.0 : 968.0) * height / 180.0);
-        int continueClickTime = CONTINUE_TIME - CLICK_TIME;
-        preSimpleActions.add(new SimpleAction(continueClickTime, 0, continueX, continueY, true));
-        preSimpleActions.add(new SimpleAction(CONTINUE_TIME, 0, continueX, continueY, false));
+        preSimpleActions.add(new SimpleAction(5000, 0, continueX, continueY, true));
+        preSimpleActions.add(new SimpleAction(5000 + CLICK_TIME, 0, continueX, continueY, false));
         Collections.sort(preSimpleActions);
     }
 

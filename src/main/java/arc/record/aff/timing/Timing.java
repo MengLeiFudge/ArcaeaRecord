@@ -1,8 +1,8 @@
 package arc.record.aff.timing;
 
-import lombok.Data;
-
 import java.io.Serializable;
+
+import lombok.Data;
 
 /**
  * @author MengLeiFudge

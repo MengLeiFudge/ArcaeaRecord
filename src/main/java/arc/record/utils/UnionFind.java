@@ -43,7 +43,7 @@ public class UnionFind<T> {
         if (ts.isEmpty()) {
             return;
         }
-        T value = ts.get(0);
+        T value = ts.getFirst();
         for (var t : ts) {
             rootMap.put(t, value);
         }

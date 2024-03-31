@@ -38,6 +38,7 @@ import org.apache.commons.lang3.SerializationUtils;
 import static arc.record.Settings.CLICK_TIME;
 import static arc.record.Settings.DEBUG_MODE;
 import static arc.record.Settings.EFFECT_TIME;
+import static arc.record.Settings.FIRST_NOTE_TIME;
 import static arc.record.Settings.TOUCH_SAMPLE_FREQUENCY;
 import static arc.record.Utils.THREAD_NUM;
 import static java.lang.Thread.sleep;
@@ -162,10 +163,13 @@ public class RecordThreadPool implements Runnable {
      */
     @Override
     public void run() {
+        if (DEBUG_MODE && processFileList.size() > 1) {
+            System.out.println("DEBUG开启且谱面文件数目大于1！");
+            return;
+        }
         for (int i = 0; i < processFileList.size(); i++) {
             if (i % THREAD_NUM == threadNo) {
                 File affFile = processFileList.get(i);
-                //Aff aff = new Aff(affFile);
                 Aff aff = affMap.get(affFile);
                 Map<Integer, List<Request>> map = processMap.get(affFile);
                 List<Note> baseNoteList = aff.getNoteList();
@@ -177,7 +181,7 @@ public class RecordThreadPool implements Runnable {
                 //        dir/testify_BYD_test/0L0小/3_mergeClickAndArcStart.txt
                 //        dir/testify_BYD_test/0L0小/4_mergeHoldEndAndArcStart.txt
                 int x0 = map.keySet().toArray(new Integer[0])[0];
-                Request request0 = map.get(x0).get(0);
+                Request request0 = map.get(x0).getFirst();
                 File dir0 = new File(request0.targetDir(), "test/" + aff.getSongName() + "_" + aff.getDiffStr());
                 saveNotes(baseNoteList, new File(dir0, "base.txt"));
                 optimizeArcOnHold(aff, baseNoteList);
@@ -517,8 +521,8 @@ public class RecordThreadPool implements Runnable {
         List<Note> noShinyPureClicks = new ArrayList<>();
         // 由于偏移也不一定小p（模拟器原因，执行时间有偏差），这里适当增加小p数
         noShinyPure *= 1.2;
-        int startTime = canModifyClicks.get(0).getT1();
-        int endTime = canModifyClicks.get(canModifyClicks.size() - 1).getT1();
+        int startTime = canModifyClicks.getFirst().getT1();
+        int endTime = canModifyClicks.getLast().getT1();
         int fullTimeSpan = endTime - startTime;
         // 本次循环的目标 miss 数
         int targetMissNum = miss;
@@ -665,7 +669,7 @@ public class RecordThreadPool implements Runnable {
                 double dis2 = Math.sqrt(Math.pow(xy2[0] - arc.getX1(), 2) + Math.pow(xy2[1] - arc.getY1(), 2));
                 return Double.compare(dis1, dis2);
             });
-            Note bestChoice = candidateClicks.get(0);
+            Note bestChoice = candidateClicks.getFirst();
             double[] xy = bestChoice.getAffPoint();
             double minDis = Math.sqrt(Math.pow(xy[0] - arc.getX1(), 2) + Math.pow(xy[1] - arc.getY1(), 2));
             // todo: 改为用模拟器宽，区分天键和地键
@@ -712,7 +716,7 @@ public class RecordThreadPool implements Runnable {
                 double dis2 = Math.sqrt(Math.pow(xy2[0] - arc.getX1(), 2) + Math.pow(xy2[1] - arc.getY1(), 2));
                 return Double.compare(dis1, dis2);
             });
-            Hold bestChoice = candidateHolds.get(0);
+            Hold bestChoice = candidateHolds.getFirst();
             double[] xy = bestChoice.getAffPoint();
             double minDis = Math.sqrt(Math.pow(xy[0] - arc.getX1(), 2) + Math.pow(xy[1] - arc.getY1(), 2));
             // todo: 改为用模拟器宽
@@ -748,15 +752,15 @@ public class RecordThreadPool implements Runnable {
         TouchIdManager idManager = new TouchIdManager();
         List<SimpleAction> simpleActions = new ArrayList<>();
         for (var relatedActions : actionsList) {
-            int beginTime = relatedActions.get(0).t();
-            Action endAction = relatedActions.get(relatedActions.size() - 1);
+            int beginTime = relatedActions.getFirst().t();
+            Action endAction = relatedActions.getLast();
             int endTime = endAction.t();
             int id = idManager.getId(beginTime, endTime);
             for (var action : relatedActions) {
                 int[] XY = DEBUG_MODE
                         ? new int[]{(int) (action.x() * 100), (int) (action.y() * 100)}
                         : request.resolution().convertToXY(action.x(), action.y(), aff.getRatio46k(action.t()));
-                simpleActions.add(new SimpleAction(action.t() + 10000, id, XY[0], XY[1], action != endAction));
+                simpleActions.add(new SimpleAction(action.t() + FIRST_NOTE_TIME + CLICK_TIME, id, XY[0], XY[1], action != endAction));
             }
         }
         // 排序

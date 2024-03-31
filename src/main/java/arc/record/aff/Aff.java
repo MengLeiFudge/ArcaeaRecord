@@ -1,15 +1,5 @@
 package arc.record.aff;
 
-import arc.record.aff.note.Arc;
-import arc.record.aff.note.Click;
-import arc.record.aff.note.Hold;
-import arc.record.aff.note.Note;
-import arc.record.aff.timing.Timing;
-import arc.record.aff.view.SceneControl;
-import lombok.AccessLevel;
-import lombok.Data;
-import lombok.Setter;
-
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
@@ -19,6 +9,16 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
+
+import arc.record.aff.note.Arc;
+import arc.record.aff.note.Click;
+import arc.record.aff.note.Hold;
+import arc.record.aff.note.Note;
+import arc.record.aff.timing.Timing;
+import arc.record.aff.view.SceneControl;
+import lombok.AccessLevel;
+import lombok.Data;
+import lombok.Setter;
 
 import static arc.record.Utils.DIFFICULTY_STR;
 import static arc.record.Utils.getProcessedTitle;

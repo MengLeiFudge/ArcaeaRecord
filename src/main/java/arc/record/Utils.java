@@ -1,15 +1,15 @@
 package arc.record;
 
-import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONArray;
-import com.alibaba.fastjson2.JSONObject;
-import org.apache.commons.io.FileUtils;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.HashMap;
 import java.util.Locale;
+
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
+import org.apache.commons.io.FileUtils;
 
 import static arc.record.Settings.SONG_LIST;
 
@@ -64,6 +64,10 @@ public class Utils {
      * @return 如果 SONG_LIST 文件中包含该歌曲，返回经过处理后的英文歌曲名；否则返回 sid
      */
     public static String getProcessedTitle(String sid) {
+        //quon有两个，需要做区分
+        if (sid.equals("quonwacca")) {
+            return "quon wacca";
+        }
         String songName = getTitleLocalizedEN(sid);
         if (songName == null) {
             return sid;
@@ -76,7 +80,7 @@ public class Utils {
                 .replaceAll("[\\\\/:*?\"<>|]", " ");
     }
 
-    public static final String[] DIFFICULTY_STR = {"PST", "PRS", "FTR", "BYD"};
+    public static final String[] DIFFICULTY_STR = {"PST", "PRS", "FTR", "BYD", "ETR"};
 
     public static SimpleDateFormat sdf = new SimpleDateFormat("MMdd_HHmmss");
 }

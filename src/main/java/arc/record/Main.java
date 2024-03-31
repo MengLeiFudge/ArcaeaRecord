@@ -1,12 +1,12 @@
 package arc.record;
 
+import java.util.Scanner;
+
 import arc.record.funcs.AffToRecord;
 import arc.record.funcs.CreateUnlockRecords;
 import arc.record.funcs.DeleteRecords;
 import arc.record.funcs.GetAllFiles;
 import arc.record.funcs.ModifySt3DB;
-
-import java.util.Scanner;
 
 /**
  * 这是一个Arcaea脚本生成程序，生成的脚本可在雷电模拟器上运行.
@@ -24,15 +24,11 @@ import java.util.Scanner;
  * @author MengLeiFudge
  */
 public class Main {
-    //todo: 修改模拟器坐标计算逻辑，扩大4/6k参数，提高精度
-    //todo: 增加4:3分辨率适配
-    //todo: 略微左移返回按键的位置
-
-    //todo: 对于beatCount<=2的蛇/长条，判定点的计算应该使用其中点（其实也不是很准，应该是小于等于1用中点，其余情况使用count*time的位置）
-    //todo: 添加结尾暂停功能，便于调试
-    //todo: 添加note转回aff的功能，便于调试
+    //todo: 雷电模拟器xplore移动文件概率为0kb如何更为合理的解决？
+    //todo: 对于beatCount<=2的蛇/长条，判定点的计算应该使用其中点
+    // （其实也不是很准，应该是小于等于1用中点，其余情况使用count*time的位置）
     //todo: 添加slf4j+logback的支持
-    //todo: 利用sqlite数据库，以及aw的查分器，修改最高分
+    //todo: 利用sqlite数据库，以及某个可用的查分器，修改最高分
 
     public static final Scanner sc = new Scanner(System.in).useDelimiter("\n");
 

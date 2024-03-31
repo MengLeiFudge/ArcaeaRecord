@@ -1,10 +1,10 @@
 package arc.record.aff.note;
 
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-
 import java.util.ArrayList;
 import java.util.List;
+
+import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 /**
  * @author MengLeiFudge

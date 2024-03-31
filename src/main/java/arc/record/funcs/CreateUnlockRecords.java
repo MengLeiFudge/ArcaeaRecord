@@ -1,13 +1,13 @@
 package arc.record.funcs;
 
-import arc.record.aff.Aff;
-
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+
+import arc.record.aff.Aff;
 
 import static arc.record.Main.sc;
 import static arc.record.Settings.AFF_DIR;

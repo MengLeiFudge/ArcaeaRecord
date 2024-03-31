@@ -1,12 +1,5 @@
 package arc.record.funcs;
 
-import arc.record.aff.Aff;
-import arc.record.record.func.RecordThreadPool;
-import arc.record.record.model.Mirror;
-import arc.record.record.model.MissAndMinPure;
-import arc.record.record.model.Request;
-import arc.record.record.model.Resolution;
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -23,9 +16,15 @@ import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import arc.record.aff.Aff;
+import arc.record.record.func.RecordThreadPool;
+import arc.record.record.model.Mirror;
+import arc.record.record.model.MissAndMinPure;
+import arc.record.record.model.Request;
+import arc.record.record.model.Resolution;
+
 import static arc.record.Main.sc;
 import static arc.record.Settings.AFF_DIR;
-import static arc.record.Settings.DEBUG_MODE;
 import static arc.record.Settings.VMS_DIR;
 import static arc.record.Settings.getApk;
 
@@ -42,8 +41,7 @@ import static arc.record.Settings.getApk;
  */
 public class AffToRecord {
     private File affDir;
-    private int minDifficulty;
-    private int maxDifficulty;
+    private final boolean[] targetDifficulty = new boolean[5];
     private MissAndMinPure missAndMinPure;
     /**
      * 脚本文件生成目录.
@@ -62,8 +60,9 @@ public class AffToRecord {
 
     public void process() {
         System.out.println("使用一键生成脚本（谱面目录使用 " + AFF_DIR + "）？");
-        System.out.println("注：包含ftr+byd 0L2%、1L6%、991w8%、982w10% 原版+镜像，以及全难度理论值原版");
+        System.out.println("注：包含ftr、etr、byd 0L3%、1L3%、996w4%、991w4%、986w5%、981w5% 原版+镜像，以及全难度理论值原版");
         System.out.println("回车表示一键生成脚本");
+        System.out.println(".表示将指定歌曲测试脚本直接放入operation records");
         System.out.println("输入其他内容表示自定义生成脚本");
         String s = sc.nextLine();
         System.out.println("查找中....");
@@ -101,13 +100,14 @@ public class AffToRecord {
      */
     private void auto() {
         affDir = AFF_DIR;
-        minDifficulty = 2;
-        maxDifficulty = 3;
+        targetDifficulty[2] = true;
+        targetDifficulty[3] = true;
+        targetDifficulty[4] = true;
         mirror = Mirror.BOTH;
         resolution = Resolution.R16_9_1280_720;
 
-        missAndMinPure = new MissAndMinPure("0", "2%");
-        targetDir = new File(VMS_DIR, "脚本/0L2%");
+        missAndMinPure = new MissAndMinPure("0", "3%");
+        targetDir = new File(VMS_DIR, "脚本/0L3%");
         try {
             targetDir = targetDir.getCanonicalFile();
         } catch (IOException e) {
@@ -116,8 +116,8 @@ public class AffToRecord {
         zipDirList.add(targetDir);
         addRequests(affDir);
 
-        missAndMinPure = new MissAndMinPure("1", "6%");
-        targetDir = new File(VMS_DIR, "脚本/1L6%");
+        missAndMinPure = new MissAndMinPure("1", "3%");
+        targetDir = new File(VMS_DIR, "脚本/1L3%");
         try {
             targetDir = targetDir.getCanonicalFile();
         } catch (IOException e) {
@@ -126,8 +126,8 @@ public class AffToRecord {
         zipDirList.add(targetDir);
         addRequests(affDir);
 
-        missAndMinPure = new MissAndMinPure("991w", "8%");
-        targetDir = new File(VMS_DIR, "脚本/991w8%");
+        missAndMinPure = new MissAndMinPure("996w", "4%");
+        targetDir = new File(VMS_DIR, "脚本/996w4%");
         try {
             targetDir = targetDir.getCanonicalFile();
         } catch (IOException e) {
@@ -136,8 +136,28 @@ public class AffToRecord {
         zipDirList.add(targetDir);
         addRequests(affDir);
 
-        missAndMinPure = new MissAndMinPure("982w", "10%");
-        targetDir = new File(VMS_DIR, "脚本/982w10%");
+        missAndMinPure = new MissAndMinPure("991w", "4%");
+        targetDir = new File(VMS_DIR, "脚本/991w4%");
+        try {
+            targetDir = targetDir.getCanonicalFile();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        zipDirList.add(targetDir);
+        addRequests(affDir);
+
+        missAndMinPure = new MissAndMinPure("986w", "5%");
+        targetDir = new File(VMS_DIR, "脚本/986w5%");
+        try {
+            targetDir = targetDir.getCanonicalFile();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        zipDirList.add(targetDir);
+        addRequests(affDir);
+
+        missAndMinPure = new MissAndMinPure("981w", "5%");
+        targetDir = new File(VMS_DIR, "脚本/981w5%");
         try {
             targetDir = targetDir.getCanonicalFile();
         } catch (IOException e) {
@@ -153,7 +173,8 @@ public class AffToRecord {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        minDifficulty = 0;
+        targetDifficulty[0] = true;
+        targetDifficulty[1] = true;
         mirror = Mirror.ORIGIN;
         addRequests(affDir);
 
@@ -164,23 +185,25 @@ public class AffToRecord {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        maxDifficulty = 1;
+        targetDifficulty[2] = false;
+        targetDifficulty[3] = false;
+        targetDifficulty[4] = false;
         zipDirList.add(targetDir);
         addRequests(affDir);
     }
 
+    /**
+     * 测试用.
+     * <p>
+     * 需要修改代码，然后再启动程序并运行。
+     */
     private void test() {
-        if (DEBUG_MODE) {
-            System.out.println("输入文件夹名");
-            affDir = new File(AFF_DIR, sc.nextLine());
-        } else {
-            affDir = AFF_DIR;
-        }
-        minDifficulty = 3;
-        maxDifficulty = 3;
+        affDir = new File(AFF_DIR, "dl_tempestissimo");
+        targetDifficulty[3] = true;
         mirror = Mirror.ORIGIN;
         resolution = Resolution.R16_9_1280_720;
-        missAndMinPure = new MissAndMinPure("0", "0");
+        //missAndMinPure = new MissAndMinPure("0", "0");
+        missAndMinPure = new MissAndMinPure("981w", "5%");
         targetDir = new File(VMS_DIR, "operationRecords");
         try {
             targetDir = targetDir.getCanonicalFile();
@@ -194,31 +217,40 @@ public class AffToRecord {
      * 使用自定义设置生成脚本.
      */
     private void diy() {
-        System.out.println("输入要转换的谱面文件夹路径");
+        System.out.println("输入要转换的谱面路径，或谱面所在文件夹");
+        System.out.println("输入谱面路径仅处理该谱面；输入谱面所在文件夹将处理文件夹内（包括子文件夹内）所有谱面");
         File defFile = AFF_DIR;
         System.out.println("回车表示 " + defFile);
         String s = sc.nextLine();
-        affDir = s.length() == 0 ? defFile : new File(s);
+        affDir = s.isEmpty() ? defFile : new File(s);
 
-        System.out.println("选择最低难度：");
-        System.out.println("0 表示 pst，1 表示 prs，2 表示 ftr，3 表示 byd");
-        System.out.println("回车表示 2，即 ftr");
-        s = sc.nextLine();
-        minDifficulty = s.length() == 0 ? 2 : Integer.parseInt(s);
-        System.out.println("选择最高难度：");
-        System.out.println("0 表示 pst，1 表示 prs，2 表示 ftr，3 表示 byd");
-        System.out.println("回车表示 3，即 byd");
-        s = sc.nextLine();
-        maxDifficulty = s.length() == 0 ? 3 : Integer.parseInt(s);
+        if (affDir.isDirectory()) {
+            System.out.println("输入五个数字，指示需要生成哪些难度的脚本：");
+            System.out.println("0 表示禁用，1 表示启用，顺序为 pst、prs、ftr、byd、etr");
+            System.out.println("例如输入 00010 表示仅处理 byd 谱面文件");
+            System.out.println("回车表示 00111，即生成 ftr、byd、etr 谱面文件");
+            s = sc.nextLine();
+            if (s.isEmpty()) {
+                targetDifficulty[2] = true;
+                targetDifficulty[3] = true;
+                targetDifficulty[4] = true;
+            } else {
+                targetDifficulty[0] = s.charAt(0) == '1';
+                targetDifficulty[1] = s.charAt(1) == '1';
+                targetDifficulty[2] = s.charAt(2) == '1';
+                targetDifficulty[3] = s.charAt(3) == '1';
+                targetDifficulty[4] = s.charAt(4) == '1';
+            }
+        }
 
         System.out.println("输入单点miss数（如3）或目标分数上限（以W/w结尾，如990w）：");
         System.out.println("回车表示 991w");
         s = sc.nextLine();
-        String missStr = s.length() == 0 ? "991w" : s;
+        String missStr = s.isEmpty() ? "991w" : s;
         System.out.println("输入小p数（如50）或小p比例（以%结尾，如5.6%）");
-        System.out.println("回车表示 8%");
+        System.out.println("回车表示 4%");
         s = sc.nextLine();
-        String minPureStr = s.length() == 0 ? "8%" : s;
+        String minPureStr = s.isEmpty() ? "4%" : s;
         missAndMinPure = new MissAndMinPure(missStr, minPureStr);
 
         System.out.println("选择目标文件夹路径：");
@@ -260,7 +292,7 @@ public class AffToRecord {
         }
         System.out.println("回车表示 " + Resolution.R16_9_1280_720.getDescribe());
         s = sc.nextLine();
-        resolution = s.length() == 0 ? Resolution.R16_9_1280_720 : resolutions[Integer.parseInt(s) - 1];
+        resolution = s.isEmpty() ? Resolution.R16_9_1280_720 : resolutions[Integer.parseInt(s) - 1];
 
         addRequests(affDir);
     }
@@ -309,7 +341,7 @@ public class AffToRecord {
             return;
         }
         int difficulty = Integer.parseInt(fileName.substring(0, 1));
-        if (difficulty < minDifficulty || difficulty > maxDifficulty) {
+        if (!targetDifficulty[difficulty]) {
             return;
         }
         Aff aff;
@@ -409,13 +441,13 @@ public class AffToRecord {
      */
     private static void zipFile(ZipOutputStream zos, File srcFileOrDir, String basePath) throws IOException {
         if (srcFileOrDir.isDirectory()) {
-            basePath = basePath + (basePath.length() == 0 ? "" : "/") + srcFileOrDir.getName();
+            basePath = basePath + (basePath.isEmpty() ? "" : "/") + srcFileOrDir.getName();
             //System.out.println("zip中的文件夹路径：" + basePath);
             for (File f : Objects.requireNonNull(srcFileOrDir.listFiles())) {
                 zipFile(zos, f, basePath);
             }
         } else {
-            basePath = (basePath.length() == 0 ? "" : basePath + "/") + srcFileOrDir.getName();
+            basePath = (basePath.isEmpty() ? "" : basePath + "/") + srcFileOrDir.getName();
             //System.out.println("zip中的文件路径：" + basePath);
             zos.putNextEntry(new ZipEntry(basePath));
             try (FileInputStream input = new FileInputStream(srcFileOrDir)) {
