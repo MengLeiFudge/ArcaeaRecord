@@ -19,7 +19,8 @@ public class Settings {
     /**
      * 指示是否为调试模式.
      * <p>
-     * 调试模式下会生成中间的处理按键列表
+     * 调试模式下会将处理过程存储至表格中，用于确认程序的处理逻辑是否正确。
+     * 同样的，由于每个脚本都会生成多个调试表格，因此开启调试模式情况下，输入的曲目的数目不应超过1。
      */
     public static final boolean DEBUG_MODE = false;
 
@@ -49,7 +50,7 @@ public class Settings {
         ArrayList<File> fileList = new ArrayList<>(Arrays.asList(files));
         fileList.removeIf(f -> !f.getName().matches("(?i)arc.*\\.apk"));
         fileList.sort(Comparator.comparing(File::getName));
-        return fileList.get(fileList.size() - 1);
+        return fileList.getLast();
     }
 
     /**
@@ -107,5 +108,5 @@ public class Settings {
      * <p>
      * 该值必须大于等于1。
      */
-    public static final float TOUCH_SAMPLE_FREQUENCY = 4;
+    public static final float TOUCH_SAMPLE_FREQUENCY = 8;
 }

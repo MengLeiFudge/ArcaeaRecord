@@ -302,7 +302,7 @@ public class AffToRecord {
      */
     private final Map<File, Map<Integer, List<Request>>> processMap = new HashMap<>();
 
-    private static final Pattern P_AFF = Pattern.compile("[0-3]\\.aff");
+    private static final Pattern P_AFF = Pattern.compile("[0-4]\\.aff");
 
     /**
      * 临时存放所有谱面文件与 Aff 实例的对应.
