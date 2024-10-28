@@ -316,7 +316,7 @@ public class AffToRecord {
      */
     private void addRequests(File file) {
         if (file.isDirectory()) {
-            // 忽略Arcade自动保存的谱面、教程、愚人节谱面
+            // 忽略Arcade自动保存的谱面、教程、愚人节谱面，以及下架歌曲
             if (file.getName().equals("Autosave")
                     || file.getName().equals("Backup")
                     || file.getName().equals("tutorial")
@@ -325,7 +325,8 @@ public class AffToRecord {
                     || file.getName().equals("redandblueandgreen")
                     || file.getName().equals("singularityvvvip")
                     || file.getName().equals("overdead")
-                    || file.getName().equals("mismal")) {
+                    || file.getName().equals("mismal")
+                    || file.getName().equals("dl_particlearts")) {
                 return;
             }
             File[] listFiles = file.listFiles();

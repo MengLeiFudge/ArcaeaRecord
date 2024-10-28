@@ -47,6 +47,11 @@ public class Utils {
                 for (int i = 0; i < songInfoArr.size(); i++) {
                     JSONObject songInfo = songInfoArr.getJSONObject(i);
                     String songId = songInfo.getString("id");
+                    // 过滤已删除的歌曲，例如 Particle Arts
+                    if (songInfo.containsKey("deleted") && songInfo.getBoolean("deleted")) {
+                        SONG_MAP.put(songId, songId);
+                        continue;
+                    }
                     String songNameEN = songInfo.getJSONObject("title_localized").getString("en");
                     SONG_MAP.put(songId, songNameEN);
                 }
