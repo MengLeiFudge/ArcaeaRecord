@@ -73,6 +73,10 @@ public class Utils {
         if (sid.equals("quonwacca")) {
             return "quon wacca";
         }
+        //Genesis有两个，需要做区分
+        if (sid.equals("genesischunithm")) {
+            return "genesis chunithm";
+        }
         String songName = getTitleLocalizedEN(sid);
         if (songName == null) {
             return sid;
