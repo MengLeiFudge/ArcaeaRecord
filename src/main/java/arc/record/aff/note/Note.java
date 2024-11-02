@@ -86,26 +86,15 @@ public abstract class Note implements Serializable, Comparable<Note> {
                 xy = getAffPoint((int) t);
                 actionDownList.add(new Action(xy[0], xy[1], (int) t));
             }
-        } else if (this instanceof Arc arc) {
+        } else if (this instanceof Arc) {
             if (getNoteCount() == 0) {
                 return;
-            } else if (getNoteCount() == 1 && arc.easing.equals("s") && t2 - t1 < 200) {
-                // 对于超短蛇需要额外处理
-                // 一个为了 merge 的action
-                xy = getAffPoint(t1);
-                actionDownList.add(new Action(xy[0], xy[1], t1));
-                // 后面使用中点
-                float timeAdd = (t2 - t1) / (TOUCH_SAMPLE_FREQUENCY + 1);
-                xy = getAffPoint((t1 + t2) / 2);
-                for (float t = t1 + 1; t < t2; t += timeAdd) {
-                    actionDownList.add(new Action(xy[0], xy[1], (int) t));
-                }
-            } else {
-                float timeAdd = beatTime / TOUCH_SAMPLE_FREQUENCY;
-                for (float t = t1; t < t2; t += timeAdd) {
-                    xy = getAffPoint((int) t);
-                    actionDownList.add(new Action(xy[0], xy[1], (int) t));
-                }
+            }
+            // 注意时间小于200ms的超短蛇的处理
+            float timeAdd = Math.max(beatTime / TOUCH_SAMPLE_FREQUENCY, 1);
+            for (float t = t1; t < t2; t += timeAdd) {
+                xy = getAffPoint((int) t);
+                actionDownList.add(new Action(xy[0], xy[1], (int) t));
             }
         }
         xy = getAffPoint(t2);

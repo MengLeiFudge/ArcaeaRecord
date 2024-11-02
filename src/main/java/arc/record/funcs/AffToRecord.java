@@ -198,12 +198,11 @@ public class AffToRecord {
      * 需要修改代码，然后再启动程序并运行。
      */
     private void test() {
-        affDir = new File(AFF_DIR, "dl_tempestissimo");
-        targetDifficulty[3] = true;
+        affDir = new File(AFF_DIR, "dl_hypervision");
+        targetDifficulty[2] = true;
         mirror = Mirror.ORIGIN;
         resolution = Resolution.R16_9_1280_720;
-        //missAndMinPure = new MissAndMinPure("0", "0");
-        missAndMinPure = new MissAndMinPure("981w", "5%");
+        missAndMinPure = new MissAndMinPure("0", "0");
         targetDir = new File(VMS_DIR, "operationRecords");
         try {
             targetDir = targetDir.getCanonicalFile();
