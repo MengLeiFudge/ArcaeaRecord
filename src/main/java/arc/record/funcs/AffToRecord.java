@@ -25,6 +25,7 @@ import arc.record.record.model.Resolution;
 
 import static arc.record.Main.sc;
 import static arc.record.Settings.AFF_DIR;
+import static arc.record.Settings.DEBUG_MODE;
 import static arc.record.Settings.VMS_DIR;
 import static arc.record.Settings.getApk;
 
@@ -62,13 +63,14 @@ public class AffToRecord {
         System.out.println("使用一键生成脚本（谱面目录使用 " + AFF_DIR + "）？");
         System.out.println("注：包含ftr、etr、byd 0L3%、1L3%、996w4%、991w4%、986w5%、981w5% 原版+镜像，以及全难度理论值原版");
         System.out.println("回车表示一键生成脚本");
-        System.out.println(".表示将指定歌曲测试脚本直接放入operation records");
+        System.out.println(".表示将指定歌曲测试脚本直接放入operation records（需要先改好代码！）");
         System.out.println("输入其他内容表示自定义生成脚本");
         String s = sc.nextLine();
         System.out.println("查找中....");
         if ("".equals(s)) {
             auto();
         } else if (".".equals(s)) {
+            DEBUG_MODE = true;
             test();
         } else {
             diy();
@@ -89,6 +91,8 @@ public class AffToRecord {
             System.out.println("开始将脚本打包至 zip...");
             autoZip();
             System.out.println("已将所有脚本打包至 zip！");
+        } else if (".".equals(s)) {
+            DEBUG_MODE = false;
         }
         System.out.println("回车继续...");
         sc.nextLine();
@@ -195,11 +199,11 @@ public class AffToRecord {
     /**
      * 测试用.
      * <p>
-     * 需要修改代码，然后再启动程序并运行。
+     * 需要修改affDir，并将DEBUG设为true，然后再启动程序并运行。
      */
     private void test() {
-        affDir = new File(AFF_DIR, "dl_hypervision");
-        targetDifficulty[2] = true;
+        affDir = new File(AFF_DIR, "dl_designant");
+        targetDifficulty[3] = true;
         mirror = Mirror.ORIGIN;
         resolution = Resolution.R16_9_1280_720;
         missAndMinPure = new MissAndMinPure("0", "0");

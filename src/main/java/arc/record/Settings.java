@@ -22,7 +22,7 @@ public class Settings {
      * 调试模式下会将处理过程存储至表格中，用于确认程序的处理逻辑是否正确。
      * 同样的，由于每个脚本都会生成多个调试表格，因此开启调试模式情况下，输入的曲目的数目不应超过1。
      */
-    public static final boolean DEBUG_MODE = false;
+    public static boolean DEBUG_MODE = false;
 
     /**
      * 脚本文件夹所在的根目录.
