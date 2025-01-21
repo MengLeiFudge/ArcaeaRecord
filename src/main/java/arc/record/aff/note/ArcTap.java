@@ -4,6 +4,8 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import static arc.record.Settings.CLICK_TIME;
+import static arc.record.Utils.dfTime;
+import static arc.record.Utils.dfXY;
 
 /**
  * @author MengLeiFudge
@@ -31,6 +33,8 @@ public class ArcTap extends Note {
 
     @Override
     public String toString() {
-        return "arctap t:[" + t1 + ", " + t2 + "] xy(" + xy[0] + ", " + xy[1] + ")";
+        return "arctap" +
+                " [" + dfTime.format(t1) + ", " + dfTime.format(t2) + "]" +
+                " (" + dfXY.format(xy[0]) + ", " + dfXY.format(xy[1]) + ")";
     }
 }

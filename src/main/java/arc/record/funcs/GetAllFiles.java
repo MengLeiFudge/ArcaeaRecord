@@ -25,14 +25,14 @@ import static arc.record.Settings.getApk;
  * @author MengLeiFudge
  */
 public class GetAllFiles {
-    public GetAllFiles() {
-    }
-
     private File dlDir;
     private File affDir;
     private File apk;
     private File charDir;
     private ArrayList<File> fileList = new ArrayList<>();
+
+    public GetAllFiles() {
+    }
 
     public void process() {
         init();

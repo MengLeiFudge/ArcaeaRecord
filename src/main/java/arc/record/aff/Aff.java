@@ -30,21 +30,36 @@ import static arc.record.Utils.getProcessedTitle;
  */
 @Data
 public class Aff {
+    private static final Pattern P_CLICK = Pattern.compile("\\([0-9]+,[0-5]\\);");
+    private static final Pattern P_HOLD = Pattern.compile("hold\\([0-9]+,[0-9]+,[0-5]\\);");
+    private static final Pattern P_ARC = Pattern.compile("arc\\([0-9]+,[0-9]+,-?[0-9.]+,-?[0-9.]+," +
+            "(b|s|si|so|sisi|siso|sosi|soso),-?[0-9.]+,-?[0-9.]+,[0-3],.+,(true|false)\\)" +
+            "(\\[arctap\\([0-9]+\\)(,arctap\\([0-9]+\\))*])?;");
+    private static final Pattern P_TIMING = Pattern.compile("timing\\([0-9]+,-?[0-9.]+,[0-9.]+\\);");
+    private static final Pattern P_SCENE_CONTROL = Pattern.compile("scenecontrol\\([0-9]+,enwidencamera,[0-9.]+,[01]\\);");
     /**
      * 谱面文件对象.
      */
     private final File affFile;
-
     /**
      * 歌曲名.
      */
     private final String songName;
-
     /**
      * 歌曲难度.
      */
     private final String diffStr;
-
+    /**
+     * 按键列表.
+     */
+    private final List<Note> noteList = new ArrayList<>();
+    /**
+     * 视觉列表.
+     * <p>
+     * 仅存储 4k/6k 变化的相关语句，即 enwidencamera。enwidenlanes 仅起显示作用，无需处理。
+     */
+    @Setter(AccessLevel.NONE)
+    private final List<SceneControl> sceneControlList = new ArrayList<>();
     /**
      * 音频偏移.
      * <p>
@@ -54,7 +69,6 @@ public class Aff {
      */
     @Setter(AccessLevel.NONE)
     private int audioOffset = 0;
-
     /**
      * 音符密度.
      * <p>
@@ -64,32 +78,6 @@ public class Aff {
      */
     @Setter(AccessLevel.NONE)
     private float timingPointDensityFactor = 1;
-
-    /**
-     * 按键列表.
-     */
-    private final List<Note> noteList = new ArrayList<>();
-
-    /**
-     * 视觉列表.
-     * <p>
-     * 仅存储 4k/6k 变化的相关语句，即 enwidencamera。enwidenlanes 仅起显示作用，无需处理。
-     */
-    @Setter(AccessLevel.NONE)
-    private final List<SceneControl> sceneControlList = new ArrayList<>();
-
-    private static final Pattern P_CLICK = Pattern.compile("\\([0-9]+,[0-5]\\);");
-
-    private static final Pattern P_HOLD = Pattern.compile("hold\\([0-9]+,[0-9]+,[0-5]\\);");
-
-    private static final Pattern P_ARC = Pattern.compile("arc\\([0-9]+,[0-9]+,-?[0-9.]+,-?[0-9.]+," +
-            "(b|s|si|so|sisi|siso|sosi|soso),-?[0-9.]+,-?[0-9.]+,[0-3],.+,(true|false)\\)" +
-            "(\\[arctap\\([0-9]+\\)(,arctap\\([0-9]+\\))*])?;");
-
-    private static final Pattern P_TIMING = Pattern.compile("timing\\([0-9]+,-?[0-9.]+,[0-9.]+\\);");
-
-    private static final Pattern P_SCENE_CONTROL = Pattern.compile("scenecontrol\\([0-9]+,enwidencamera,[0-9.]+,[01]\\);");
-
     /**
      * 谱面note总数.
      */
@@ -146,7 +134,8 @@ public class Aff {
                     processTimingGroup(currTimingGroup);
                     timingGroupList.add(currTimingGroup);
                     currTimingGroup = baseTimingGroup;
-                } else {
+                } else if (!currTimingGroup.noInput) {
+                    // 只有不是noInput的timingGroup才有必要处理里面的东西
                     if (P_CLICK.matcher(line).matches()) {
                         Click click = new Click(line);
                         currTimingGroup.noteList.add(click);
@@ -156,10 +145,10 @@ public class Aff {
                     } else if (P_ARC.matcher(line).matches()) {
                         Arc arc = new Arc(line);
                         // 不处理黑线
-                        if (arc.getArctapTimingList().isEmpty() && arc.isSkylineBoolean()) {
+                        if (arc.getArctapTimingList().isEmpty() && !arc.isRealArc()) {
                             continue;
                         }
-                        if (arc.isSkylineBoolean()) {
+                        if (!arc.isRealArc()) {
                             // 多个天键
                             currTimingGroup.noteList.addAll(arc.getArcTapList());
                         } else {
@@ -183,9 +172,44 @@ public class Aff {
             e.printStackTrace();
         }
         Collections.sort(arcList);
+        // 检查是否存在两个蛇时间、位置重合的情况，bpm无所谓
+        // 如果重合，移除bpm较低的那个蛇
+        int i = 0;
+        Arc arcToBeRemoved = null;
+        while (i < arcList.size() - 1) {
+            Arc arc1 = arcList.get(i);
+            for (int j = i + 1; j < arcList.size(); j++) {
+                Arc arc2 = arcList.get(j);
+                if (arc2.getT1() > arc1.getT1()) {
+                    // 快速循环
+                    break;
+                }
+                // 颜色、时间、位置相同就行，别的条件暂时不管
+                if (arc1.getColor() == arc2.getColor()
+                        && arc1.getT1() == arc2.getT1() && arc1.getT2() == arc2.getT2()
+                        && arc1.getX1() == arc2.getX1() && arc1.getY1() == arc2.getY1()
+                        && arc1.getX2() == arc2.getX2() && arc1.getY2() == arc2.getY2()) {
+                    // beatTime短 = bpm高 = 不移除
+                    arcToBeRemoved = arc1.getBeatTime() > arc2.getBeatTime() ? arc1 : arc2;
+                    break;
+                }
+            }
+            if (arcToBeRemoved != null) {
+                arcList.remove(arcToBeRemoved);
+                for (var timingGroup : timingGroupList) {
+                    if (timingGroup.noInput) {
+                        continue;
+                    }
+                    timingGroup.noteList.remove(arcToBeRemoved);
+                }
+                arcToBeRemoved = null;
+            } else {
+                i++;
+            }
+        }
         Collections.sort(sceneControlList);
         // 遍历 arcList，修改 hasHead 变量
-        for (int i = 0; i < arcList.size(); i++) {
+        for (i = 0; i < arcList.size(); i++) {
             Arc arci = arcList.get(i);
             for (int j = i + 1; j < arcList.size(); j++) {
                 Arc arcj = arcList.get(j);
@@ -201,7 +225,6 @@ public class Aff {
             if (timingGroup.noInput) {
                 continue;
             }
-            timingGroup.noteList.removeIf(o -> o instanceof Arc arc && arc.getT1() == arc.getT2());
             if (!timingGroup.noteList.isEmpty()) {
                 noteList.addAll(timingGroup.noteList);
             }

@@ -21,19 +21,6 @@ public class TouchIdManager implements Serializable {
     }
 
     /**
-     * 非蛇操作基础类，仅包含开始时间、结束时间.
-     */
-    private static class TouchTime implements Serializable {
-        int beginTime;
-        int endTime;
-
-        TouchTime(int b, int e) {
-            beginTime = b;
-            endTime = e;
-        }
-    }
-
-    /**
      * 获取指定时间段情况下，可用的最小ID.
      *
      * @param beginTime 操作开始时间
@@ -72,6 +59,19 @@ public class TouchIdManager implements Serializable {
             return true;
         } else {
             return false;
+        }
+    }
+
+    /**
+     * 非蛇操作基础类，仅包含开始时间、结束时间.
+     */
+    private static class TouchTime implements Serializable {
+        int beginTime;
+        int endTime;
+
+        TouchTime(int b, int e) {
+            beginTime = b;
+            endTime = e;
         }
     }
 }

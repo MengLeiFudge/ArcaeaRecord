@@ -41,6 +41,7 @@ import static arc.record.Settings.EFFECT_TIME;
 import static arc.record.Settings.FIRST_NOTE_TIME;
 import static arc.record.Settings.TOUCH_SAMPLE_FREQUENCY;
 import static arc.record.Utils.THREAD_NUM;
+import static arc.record.Utils.dfTime;
 import static java.lang.Thread.sleep;
 
 /**
@@ -49,29 +50,19 @@ import static java.lang.Thread.sleep;
  * @author MengLeiFudge
  */
 public class RecordThreadPool implements Runnable {
-    private static class ConvertThreadFactory implements ThreadFactory {
-        final ThreadGroup group;
-        final AtomicInteger threadNumber = new AtomicInteger(1);
-        final String namePrefix;
+    private static final DecimalFormat df = new DecimalFormat("0.00%");
+    private static Map<File, Aff> affMap;
+    private static Map<File, Map<Integer, List<Request>>> processMap;
+    private static List<File> processFileList;
+    private static int processedNum;
+    private final int threadNo;
+    /**
+     * 存储所有代表蛇头的 arc，便于其他方法使用.
+     */
+    private List<Arc> arcStarts;
 
-        ConvertThreadFactory() {
-            group = Thread.currentThread().getThreadGroup();
-            namePrefix = "thread-";
-        }
-
-        @Override
-        public Thread newThread(Runnable r) {
-            Thread t = new Thread(group, r, namePrefix + threadNumber.getAndIncrement(), 0);
-            // 设置为非后台进程
-            if (t.isDaemon()) {
-                t.setDaemon(false);
-            }
-            // 设置为普通优先级
-            if (t.getPriority() != Thread.NORM_PRIORITY) {
-                t.setPriority(Thread.NORM_PRIORITY);
-            }
-            return t;
-        }
+    private RecordThreadPool(int threadNo) {
+        this.threadNo = threadNo;
     }
 
     public static void process(Map<File, Map<Integer, List<Request>>> processMap) {
@@ -136,15 +127,13 @@ public class RecordThreadPool implements Runnable {
         System.out.println("处理完毕，用时" + minuteStr + secondStr + milliStr);
     }
 
-    private final int threadNo;
-    private static Map<File, Aff> affMap;
-    private static Map<File, Map<Integer, List<Request>>> processMap;
-    private static List<File> processFileList;
-    private static int processedNum;
-    private static final DecimalFormat df = new DecimalFormat("0.00%");
-
-    private RecordThreadPool(int threadNo) {
-        this.threadNo = threadNo;
+    private static void add(JSONArray points, SimpleAction simpleAction, boolean mirror, Resolution resolution) {
+        JSONObject obj = new JSONObject();
+        obj.put("id", simpleAction.id());
+        obj.put("x", mirror ? resolution.getMaxX() - simpleAction.x() : simpleAction.x());
+        obj.put("y", simpleAction.y());
+        obj.put("state", simpleAction.getState());
+        points.add(obj);
     }
 
     /**
@@ -183,9 +172,13 @@ public class RecordThreadPool implements Runnable {
                 int x0 = map.keySet().toArray(new Integer[0])[0];
                 Request request0 = map.get(x0).getFirst();
                 File dir0 = new File(request0.targetDir(), "test/" + aff.getSongName() + "_" + aff.getDiffStr());
-                saveNotes(baseNoteList, new File(dir0, "base.txt"));
+                if (DEBUG_MODE) {
+                    saveNotes(baseNoteList, new File(dir0, "base.txt"));
+                }
                 optimizeArcOnHold(aff, baseNoteList);
-                saveNotes(baseNoteList, new File(dir0, "ArcOnHold.txt"));
+                if (DEBUG_MODE) {
+                    saveNotes(baseNoteList, new File(dir0, "ArcOnHold.txt"));
+                }
                 for (var x : map.keySet()) {
                     int miss = x / (aff.getNoteCount() + 1);
                     int noShinyPure = x % (aff.getNoteCount() + 1);
@@ -223,7 +216,10 @@ public class RecordThreadPool implements Runnable {
                             saveActions(noteList, actionUnionFind, new File(dir1, "4_HoldArc.txt"));
                         }
                         for (var request : map.get(x)) {
-                            saveRecord(aff, noteList, actionUnionFind, miss, noShinyPure, request, dir1);
+                            if (DEBUG_MODE) {
+                                saveRecord(aff, noteList, actionUnionFind, miss, noShinyPure, request, dir1);
+                            }
+                            saveRecord(aff, noteList, actionUnionFind, miss, noShinyPure, request, null);
                         }
                     }
                     synchronized (RecordThreadPool.class) {
@@ -235,9 +231,6 @@ public class RecordThreadPool implements Runnable {
     }
 
     private void saveNotes(List<Note> noteList, File file) {
-        if (!DEBUG_MODE) {
-            return;
-        }
         List<String> lines = new ArrayList<>();
         for (var note : noteList) {
             lines.add(note.toString());
@@ -252,8 +245,13 @@ public class RecordThreadPool implements Runnable {
     private List<List<Action>> convertToActionList(List<Note> noteList, UnionFind<Action> actionUnionFind) {
         List<List<Action>> actionsList = new ArrayList<>();
         for (var note : noteList) {
+            // 直蛇虽然有两个操作，但是没有实际意义，仅为了连接。
+            // 所以，如果某个直蛇的getActions()长度为2，说明这个直蛇没有用
+            if (note instanceof Arc arc && arc.getNoteCount() == 0 && arc.getActions().size() == 2) {
+                continue;
+            }
             List<Action> noteActions = note.getActions();
-            if (noteActions.isEmpty()) {
+            if (noteActions == null || noteActions.isEmpty()) {
                 continue;
             }
             boolean isRelated = false;
@@ -278,29 +276,33 @@ public class RecordThreadPool implements Runnable {
     }
 
     private void saveActions(List<Note> noteList, UnionFind<Action> actionUnionFind, File file) {
-        if (!DEBUG_MODE) {
-            return;
-        }
         // 原始list
         List<List<Action>> actionLists = convertToActionList(noteList, actionUnionFind);
-        // 操作map
-        Map<Action, Integer> map = new HashMap<>();
+        // 获取action是按下还是抬起，true按下 false抬起
+        Map<Action, Boolean> upDownMap = new HashMap<>();
+        // 获取action对应操作集合的最早时间
+        Map<Action, Integer> startTimeMap = new HashMap<>();
+        // 存储所有action
+        List<Action> actions = new ArrayList<>();
         for (var actionList : actionLists) {
-            for (var action : actionList) {
-                map.put(action, actionLists.indexOf(actionList));
+            // 前面的都是按下，最后一个是抬起
+            for (int i = 0; i < actionList.size(); i++) {
+                upDownMap.put(actionList.get(i), i != actionList.size() - 1);
+                startTimeMap.put(actionList.get(i), actionList.getFirst().t());
+                actions.add(actionList.get(i));
             }
         }
-        // 操作集合
-        List<Action> actions = new ArrayList<>();
-        for (var list : actionLists) {
-            actions.addAll(list);
-        }
         Collections.sort(actions);
-        // 输出
+        // 要写入文件的行
         List<String> lines = new ArrayList<>();
         for (var action : actions) {
-            lines.add(action.toString() /*+ " " + String.format("%4d", map.get(action))*/);
+            if (upDownMap.get(action)) {
+                lines.add("[" + dfTime.format(startTimeMap.get(action)) + "] Down" + action.toString());
+            } else {
+                lines.add("[" + dfTime.format(startTimeMap.get(action)) + "] Up  " + action.toString());
+            }
         }
+        // 写入文件
         try {
             FileUtils.writeLines(file, lines);
         } catch (IOException e) {
@@ -361,8 +363,8 @@ public class RecordThreadPool implements Runnable {
                 continue;
             }
             // 长条判定区
-            double minX = hold.getLane() * 0.5 - 1;
-            double maxX = hold.getLane() * 0.5 - 0.5;
+            double minX = hold.getTrack() * 0.5 - 1;
+            double maxX = hold.getTrack() * 0.5 - 0.5;
             // 对于所有对该长条有影响的蛇，保存有影响的时间段；保存时，如果差距在50ms内，则合并两个时间段
             Map<Integer, Integer> timeMap = new HashMap<>();
             for (var arc : candidateArcs) {
@@ -566,11 +568,6 @@ public class RecordThreadPool implements Runnable {
     }
 
     /**
-     * 存储所有代表蛇头的 arc，便于其他方法使用.
-     */
-    private List<Arc> arcStarts;
-
-    /**
      * 连接同色蛇/碎蛇.
      * <p>
      * 不考虑异色蛇的连接；不考虑同时出现同色蛇的情况。
@@ -596,27 +593,33 @@ public class RecordThreadPool implements Runnable {
                 });
         arcStarts = new ArrayList<>();
         for (List<Arc> arcs : arcsMap.values()) {
-            boolean lastArcMerged = false;
-            for (int i = 0; i < arcs.size() - 1; i++) {
-                Arc arc1 = arcs.get(i);
-                Arc arc2 = arcs.get(i + 1);
-                if (!lastArcMerged) {
-                    arcStarts.add(arc1);
-                }
-                if (arc2.getT1() - arc1.getT2() < 50) {
-                    Note.mergeNotes(arc1, arc2, actionUnionFind);
-                    if (DEBUG_MODE) {
-                        System.out.println(arc1 + " + " + arc2);
-                    }
-                    //System.out.println(arc1.getColor() + " " + arc1.getT1() + "-"
-                    // + arc1.getT2() + ", " + arc2.getT1() + "-" + arc2.getT2());
-                    lastArcMerged = true;
-                } else {
-                    lastArcMerged = false;
-                }
+            // arcs是某个颜色的所有蛇
+            if (arcs.isEmpty()) {
+                continue;
             }
-            if (!lastArcMerged) {
-                arcStarts.add(arcs.get(arcs.size() - 1));
+            Arc previousArc = arcs.getFirst();
+            arcStarts.add(previousArc);
+            for (int i = 1; i < arcs.size(); i++) {
+                Arc arc = arcs.get(i);
+                // 判断arc能否与lastArc连接
+                if (Math.abs(previousArc.getT2() - arc.getT1()) < 50) {
+                    // 蛇尾与下一个蛇的蛇头时间差小于50ms，可能需要连接
+                    // 分四种情况：普通蛇+普通蛇，普通蛇+直蛇，直蛇+普通蛇，直蛇+直蛇
+                    // 普通蛇+普通蛇：正常合并
+                    // 普通蛇+直蛇：无视直蛇
+                    // 直蛇+普通蛇：正常合并。这里暂且不考虑直蛇的方向问题
+                    // 直蛇+直蛇：无视后一个直蛇
+                    if (arc.getT1() != arc.getT2()) {
+                        Note.mergeNotes(previousArc, arc, actionUnionFind);
+                        if (DEBUG_MODE) {
+                            System.out.println(previousArc + " + " + arc);
+                        }
+                        previousArc = arc;
+                    }
+                } else {
+                    previousArc = arc;
+                    arcStarts.add(arc);
+                }
             }
         }
         Collections.sort(arcStarts);
@@ -626,7 +629,7 @@ public class RecordThreadPool implements Runnable {
     }
 
     /**
-     * 连接天键与蛇头.
+     * 连接天键与蛇头、地键与蛇头.
      * <p>
      * 如果要连接某个天键与蛇头，那么蛇的 hasHead 必须为 false；
      * 但天键与蛇较近且的 hasHead 必须为 false，并不能说明二者一定要连接。
@@ -742,10 +745,10 @@ public class RecordThreadPool implements Runnable {
      * @param miss            miss个数
      * @param noShinyPure     小p个数
      * @param request         脚本生成需求
-     * @param dir1            如果为调试模式，该目录为调试脚本保存路径
+     * @param debugDir        为null表示使用request的路径，否则使用该路径
      */
     private void saveRecord(Aff aff, List<Note> noteList, UnionFind<Action> actionUnionFind,
-                            int miss, int noShinyPure, Request request, File dir1) {
+                            int miss, int noShinyPure, Request request, File debugDir) {
         // 构建谱面操作列表，有关联的操作会放在同一个 list 中
         List<List<Action>> actionsList = convertToActionList(noteList, actionUnionFind);
         // 构建实际操作列表
@@ -757,9 +760,7 @@ public class RecordThreadPool implements Runnable {
             int endTime = endAction.t();
             int id = idManager.getId(beginTime, endTime);
             for (var action : relatedActions) {
-                int[] XY = DEBUG_MODE
-                        ? new int[]{(int) (action.x() * 100), (int) (action.y() * 100)}
-                        : request.resolution().convertToXY(action.x(), action.y(), aff.getRatio46k(action.t()));
+                int[] XY = request.resolution().convertToXY(action.x(), action.y(), aff.getRatio46k(action.t()));
                 simpleActions.add(new SimpleAction(action.t() + FIRST_NOTE_TIME + CLICK_TIME, id, XY[0], XY[1], action != endAction));
             }
         }
@@ -829,7 +830,7 @@ public class RecordThreadPool implements Runnable {
         obj.put("recordInfo", recordInfo);
         // 格式化字符串，并保存至文件
         String formatStr = obj.toString(JSONWriter.Feature.PrettyFormat);
-        File targetDir = DEBUG_MODE ? dir1 : request.targetDir();
+        File targetDir = debugDir != null ? debugDir : request.targetDir();
         File recordFile = new File(targetDir, aff.getSongName() + "_" + s + ".record");
         try {
             FileUtils.write(recordFile, formatStr, StandardCharsets.UTF_8);
@@ -838,12 +839,28 @@ public class RecordThreadPool implements Runnable {
         }
     }
 
-    private static void add(JSONArray points, SimpleAction simpleAction, boolean mirror, Resolution resolution) {
-        JSONObject obj = new JSONObject();
-        obj.put("id", simpleAction.id());
-        obj.put("x", mirror ? resolution.getMaxX() - simpleAction.x() : simpleAction.x());
-        obj.put("y", simpleAction.y());
-        obj.put("state", simpleAction.getState());
-        points.add(obj);
+    private static class ConvertThreadFactory implements ThreadFactory {
+        final ThreadGroup group;
+        final AtomicInteger threadNumber = new AtomicInteger(1);
+        final String namePrefix;
+
+        ConvertThreadFactory() {
+            group = Thread.currentThread().getThreadGroup();
+            namePrefix = "thread-";
+        }
+
+        @Override
+        public Thread newThread(Runnable r) {
+            Thread t = new Thread(group, r, namePrefix + threadNumber.getAndIncrement(), 0);
+            // 设置为非后台进程
+            if (t.isDaemon()) {
+                t.setDaemon(false);
+            }
+            // 设置为普通优先级
+            if (t.getPriority() != Thread.NORM_PRIORITY) {
+                t.setPriority(Thread.NORM_PRIORITY);
+            }
+            return t;
+        }
     }
 }

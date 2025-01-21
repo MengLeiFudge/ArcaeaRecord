@@ -1,5 +1,8 @@
 package arc.record.aff.action;
 
+import static arc.record.Utils.dfTime;
+import static arc.record.Utils.dfXY;
+
 /**
  * 表示一个简单动作.
  * <p>
@@ -18,8 +21,7 @@ public record Action(double x, double y, int t) implements Comparable<Action> {
 
     @Override
     public String toString() {
-        return "Action[" + String.format("%6d", t) + "] xy(" + String.format("%2f", x)
-                + ", " + String.format("%2f", y) + ")";
+        return "Action[" + dfTime.format(t) + "] xy(" + dfXY.format(x) + ", " + dfXY.format(y) + ")";
     }
 
     @Override

@@ -6,6 +6,9 @@ import java.util.List;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import static arc.record.Utils.dfTime;
+import static arc.record.Utils.dfXY;
+
 /**
  * @author MengLeiFudge
  */
@@ -18,7 +21,7 @@ public class Arc extends Note {
     final double y1;
     final double y2;
     final int color;
-    final boolean skylineBoolean;
+    final boolean isRealArc;
     /**
      * 存放所有的 arctap.
      */
@@ -29,9 +32,9 @@ public class Arc extends Note {
     boolean hasHead = false;
 
     public Arc(String line) {
-        boolean skyline = line.contains("arctap");
+        boolean containsArctap = line.contains("arctap");
         String[] data;
-        if (!skyline) {
+        if (!containsArctap) {
             data = line.substring("arc(".length(), line.length() - 2).split(",");
         } else {
             data = line.substring("arc(".length(), line.indexOf(")[")).split(",");
@@ -45,18 +48,28 @@ public class Arc extends Note {
         this.y2 = Double.parseDouble(data[6]);
         this.color = Integer.parseInt(data[7]);
         // data[8] 是打击音效，无用
-        if (!skyline) {
-            // 不含天键情况下，蛇可能为黑线；含天键情况下，必定为黑线
-            this.skylineBoolean = Boolean.parseBoolean(data[9]);
+        if (!containsArctap) {
+            // Arc不含天键情况，可能为实蛇可能为虚蛇
+            // data[9]可能为false（实蛇）、true（虚蛇）、designant（虚蛇，是Designant.独有的红线）
+            this.isRealArc = data[9].equals("false");
             return;
         } else {
-            this.skylineBoolean = true;
+            // Arc含天键情况，必定为虚蛇
+            this.isRealArc = false;
         }
         data = line.substring(line.indexOf(")[") + 2, line.length() - 2).split(",");
         for (var x : data) {
             x = x.replaceAll("arctap\\(|\\)", "");
             this.arctapTimingList.add(Integer.parseInt(x));
         }
+    }
+
+    private static double getP(double pStart, double pEnd, boolean isSi, double timeRatio) {
+        // 将时间比例转换为正弦/余弦比例
+        // arc 实际使用贝塞尔曲线，使用正弦/余弦近似
+        // 0<t<1, si(t)=sin(t*pi/2), so(t)=1-cos(t*pi/2)
+        double ratioB = isSi ? Math.sin(timeRatio * Math.PI / 2) : 1 - Math.cos(timeRatio * Math.PI / 2);
+        return pStart + ratioB * (pEnd - pStart);
     }
 
     /**
@@ -77,10 +90,10 @@ public class Arc extends Note {
      */
     @Override
     public int getNoteCount() {
-        if (arctapTimingList.size() > 0) {
+        if (!arctapTimingList.isEmpty()) {
             return arctapTimingList.size();
         }
-        if (skylineBoolean) {
+        if (!isRealArc) {
             return 0;
         }
         if (t2 - t1 == 0) {
@@ -142,14 +155,6 @@ public class Arc extends Note {
         };
     }
 
-    private static double getP(double pStart, double pEnd, boolean isSi, double timeRatio) {
-        // 将时间比例转换为正弦/余弦比例
-        // arc 实际使用贝塞尔曲线，使用正弦/余弦近似
-        // 0<t<1, si(t)=sin(t*pi/2), so(t)=1-cos(t*pi/2)
-        double ratioB = isSi ? Math.sin(timeRatio * Math.PI / 2) : 1 - Math.cos(timeRatio * Math.PI / 2);
-        return pStart + ratioB * (pEnd - pStart);
-    }
-
     public List<ArcTap> getArcTapList() {
         List<ArcTap> list = new ArrayList<>();
         for (var time : arctapTimingList) {
@@ -160,6 +165,9 @@ public class Arc extends Note {
 
     @Override
     public String toString() {
-        return "arc" + color + " t:[" + t1 + ", " + t2 + "] xy1(" + x1 + ", " + y1 + ") xy2(" + x2 + ", " + y2 + ")";
+        return "arc" + color + "  " +
+                " [" + dfTime.format(t1) + ", " + dfTime.format(t2) + "]" +
+                " (" + dfXY.format(x1) + ", " + dfXY.format(y1) + ")" +
+                " (" + dfXY.format(x2) + ", " + dfXY.format(y2) + ")";
     }
 }

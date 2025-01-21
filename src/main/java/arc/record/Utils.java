@@ -2,6 +2,7 @@ package arc.record;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.HashMap;
 import java.util.Locale;
@@ -19,18 +20,21 @@ import static arc.record.Settings.SONG_LIST;
  * @author MengLeiFudge
  */
 public class Utils {
-    private Utils() {
-    }
-
     /**
      * JVM 可用的最大 CPU 数量.
      */
     public static final int THREAD_NUM = Runtime.getRuntime().availableProcessors();
-
+    public static final String[] DIFFICULTY_STR = {"PST", "PRS", "FTR", "BYD", "ETR"};
     /**
      * 暂存 sid 与 歌曲英文名 的对应关系，提升读取速度.
      */
     private static final HashMap<String, String> SONG_MAP = new HashMap<>();
+    public static SimpleDateFormat sdf = new SimpleDateFormat("MMdd_HHmmss");
+    public static DecimalFormat dfTime = new DecimalFormat("000000");
+    public static DecimalFormat dfXY = new DecimalFormat(" 0.00;-0.00");
+
+    private Utils() {
+    }
 
     /**
      * 根据输入的 sid，返回对应的歌曲英文名.
@@ -88,8 +92,4 @@ public class Utils {
                 .replaceAll("\\?", "？")
                 .replaceAll("[\\\\/:*?\"<>|]", " ");
     }
-
-    public static final String[] DIFFICULTY_STR = {"PST", "PRS", "FTR", "BYD", "ETR"};
-
-    public static SimpleDateFormat sdf = new SimpleDateFormat("MMdd_HHmmss");
 }

@@ -3,6 +3,9 @@ package arc.record.aff.note;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import static arc.record.Utils.dfTime;
+import static arc.record.Utils.dfXY;
+
 /**
  * @author MengLeiFudge
  */
@@ -12,13 +15,13 @@ public class Hold extends Note {
     /**
      * 所在轨道（0-5）.
      */
-    final int lane;
+    final int track;
 
     public Hold(String line) {
         String[] data = line.substring("hold(".length(), line.length() - 2).split(",");
         super.t1 = Integer.parseInt(data[0]);
         super.t2 = Integer.parseInt(data[1]);
-        this.lane = Integer.parseInt(data[2]);
+        this.track = Integer.parseInt(data[2]);
     }
 
     /**
@@ -44,7 +47,7 @@ public class Hold extends Note {
         if (time < t1 || time > t2) {
             throw new IllegalArgumentException("时间 " + time + " 不在 [" + t1 + ", " + t2 + "] 区间内");
         }
-        return new double[]{lane * 0.5 - 0.75, 0};
+        return new double[]{track * 0.5 - 0.75, 0};
     }
 
     /**
@@ -63,6 +66,8 @@ public class Hold extends Note {
 
     @Override
     public String toString() {
-        return "hold t:[" + t1 + ", " + t2 + "] xy(" + getAffPoint()[0] + ", " + getAffPoint()[1] + ")";
+        return "hold  " +
+                " [" + dfTime.format(t1) + ", " + dfTime.format(t2) + "]" +
+                " (" + dfXY.format(getAffPoint()[0]) + ", " + dfXY.format(getAffPoint()[1]) + ")";
     }
 }

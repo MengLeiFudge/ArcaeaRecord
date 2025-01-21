@@ -28,58 +28,6 @@ public enum Resolution {
     R4_3_1200_900(1200, false),
     R4_3_1440_1080(1440, false);
 
-    /**
-     * 分辨率的宽.
-     */
-    private final int width;
-
-    /**
-     * 分辨率的高.
-     */
-    private final int height;
-
-    /**
-     * 分辨率比例类型，true 表示 16:9，false 表示 4:3.
-     */
-    private final boolean is16_9;
-
-    /**
-     * 该分辨率相对基准分辨率（高为720）的比例，用于计算不同分辨率的模拟器坐标.
-     */
-    private final double ratioHeight720;
-
-    public String getDescribe() {
-        return width + " * " + height + (is16_9 ? "（16:9）" : "（4:3）");
-    }
-
-    private final ArrayList<SimpleAction> preSimpleActions;
-
-    public List<SimpleAction> getPreSimpleActions() {
-        return preSimpleActions;
-    }
-
-    Resolution(int width, boolean is16_9) {
-        this.width = width;
-        this.height = is16_9 ? width * 9 / 16 : width * 3 / 4;
-        this.is16_9 = is16_9;
-        this.ratioHeight720 = height / 720.0;
-        // 构建脚本开始前的操作list
-        preSimpleActions = new ArrayList<>();
-        // 多次点击暂停键
-        int pauseX = (int) ((is16_9 ? 355.0 : 280.0) * height / 180.0);
-        int pauseY = (int) ((is16_9 ? 262.5 : 156.0) * height / 180.0);
-        for (int time = 0; time < 4997; time += 3) {
-            preSimpleActions.add(new SimpleAction(time, time / 3 % 4, pauseX, pauseY, true));
-            preSimpleActions.add(new SimpleAction(time + 3, time / 3 % 4, pauseX, pauseY, false));
-        }
-        // 点击返回键
-        int continueX = (int) ((is16_9 ? 1657.5 : 1332.0) * height / 180.0);
-        int continueY = (int) ((is16_9 ? 1605.0 : 968.0) * height / 180.0);
-        preSimpleActions.add(new SimpleAction(5000, 0, continueX, continueY, true));
-        preSimpleActions.add(new SimpleAction(5000 + CLICK_TIME, 0, continueX, continueY, false));
-        Collections.sort(preSimpleActions);
-    }
-
     private static final Function<double[], int[]> GAME_TO_SCREEN_16_9;
     private static final Function<double[], int[]> GAME_TO_SCREEN_4_3;
 
@@ -136,6 +84,54 @@ public enum Resolution {
         };
         GAME_TO_SCREEN_16_9 = process.apply(PARAMS16_9);
         GAME_TO_SCREEN_4_3 = process.apply(PARAMS4_3);
+    }
+
+    /**
+     * 分辨率的宽.
+     */
+    private final int width;
+    /**
+     * 分辨率的高.
+     */
+    private final int height;
+    /**
+     * 分辨率比例类型，true 表示 16:9，false 表示 4:3.
+     */
+    private final boolean is16_9;
+    /**
+     * 该分辨率相对基准分辨率（高为720）的比例，用于计算不同分辨率的模拟器坐标.
+     */
+    private final double ratioHeight720;
+    private final ArrayList<SimpleAction> preSimpleActions;
+
+    Resolution(int width, boolean is16_9) {
+        this.width = width;
+        this.height = is16_9 ? width * 9 / 16 : width * 3 / 4;
+        this.is16_9 = is16_9;
+        this.ratioHeight720 = height / 720.0;
+        // 构建脚本开始前的操作list
+        preSimpleActions = new ArrayList<>();
+        // 多次点击暂停键
+        int pauseX = (int) ((is16_9 ? 355.0 : 280.0) * height / 180.0);
+        int pauseY = (int) ((is16_9 ? 262.5 : 156.0) * height / 180.0);
+        for (int time = 0; time < 4997; time += 3) {
+            preSimpleActions.add(new SimpleAction(time, time / 3 % 4, pauseX, pauseY, true));
+            preSimpleActions.add(new SimpleAction(time + 3, time / 3 % 4, pauseX, pauseY, false));
+        }
+        // 点击返回键
+        int continueX = (int) ((is16_9 ? 1657.5 : 1332.0) * height / 180.0);
+        int continueY = (int) ((is16_9 ? 1605.0 : 968.0) * height / 180.0);
+        preSimpleActions.add(new SimpleAction(5000, 0, continueX, continueY, true));
+        preSimpleActions.add(new SimpleAction(5000 + CLICK_TIME, 0, continueX, continueY, false));
+        Collections.sort(preSimpleActions);
+    }
+
+    public String getDescribe() {
+        return width + " * " + height + (is16_9 ? "（16:9）" : "（4:3）");
+    }
+
+    public List<SimpleAction> getPreSimpleActions() {
+        return preSimpleActions;
     }
 
     /**

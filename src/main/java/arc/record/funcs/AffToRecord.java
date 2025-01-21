@@ -41,8 +41,24 @@ import static arc.record.Settings.getApk;
  * @author MengLeiFudge
  */
 public class AffToRecord {
-    private File affDir;
+    private static final Pattern P_AFF = Pattern.compile("[0-4]\\.aff");
+    private static final Pattern P_APK = Pattern.compile("[0-9]+\\.[0-9]+\\.[0-9]+c");
     private final boolean[] targetDifficulty = new boolean[5];
+    /**
+     * 要压缩的文件夹.
+     * <p>
+     * 将需要压缩的文件夹添加至该 list，并调用 {@link #autoZip}，每个文件夹都会生成一个压缩文件。
+     */
+    private final List<File> zipDirList = new ArrayList<>();
+    /**
+     * 存储脚本生成信息的 map.
+     */
+    private final Map<File, Map<Integer, List<Request>>> processMap = new HashMap<>();
+    /**
+     * 临时存放所有谱面文件与 Aff 实例的对应.
+     */
+    private final Map<File, Aff> affMap = new HashMap<>();
+    private File affDir;
     private MissAndMinPure missAndMinPure;
     /**
      * 脚本文件生成目录.
@@ -52,12 +68,50 @@ public class AffToRecord {
     private File targetDir;
     private Mirror mirror;
     private Resolution resolution;
+
     /**
-     * 要压缩的文件夹.
-     * <p>
-     * 将需要压缩的文件夹添加至该 list，并调用 {@link #autoZip}，每个文件夹都会生成一个压缩文件。
+     * @param srcFileOrDir 要压缩的文件
+     * @param zipFile      压缩文件存放地方
      */
-    private final List<File> zipDirList = new ArrayList<>();
+    private static void zip(File srcFileOrDir, File zipFile) {
+        try {
+            srcFileOrDir = srcFileOrDir.getCanonicalFile();
+            zipFile = zipFile.getCanonicalFile();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        try (ZipOutputStream outputStream = new ZipOutputStream(new FileOutputStream(zipFile))) {
+            zipFile(outputStream, srcFileOrDir, "");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * @param zos          ZipOutputStream对象
+     * @param srcFileOrDir 要压缩的文件或文件夹
+     * @param basePath     条目根目录
+     */
+    private static void zipFile(ZipOutputStream zos, File srcFileOrDir, String basePath) throws IOException {
+        if (srcFileOrDir.isDirectory()) {
+            basePath = basePath + (basePath.isEmpty() ? "" : "/") + srcFileOrDir.getName();
+            //System.out.println("zip中的文件夹路径：" + basePath);
+            for (File f : Objects.requireNonNull(srcFileOrDir.listFiles())) {
+                zipFile(zos, f, basePath);
+            }
+        } else {
+            basePath = (basePath.isEmpty() ? "" : basePath + "/") + srcFileOrDir.getName();
+            //System.out.println("zip中的文件路径：" + basePath);
+            zos.putNextEntry(new ZipEntry(basePath));
+            try (FileInputStream input = new FileInputStream(srcFileOrDir)) {
+                int readLen;
+                byte[] buffer = new byte[1024 * 8];
+                while ((readLen = input.read(buffer, 0, buffer.length)) != -1) {
+                    zos.write(buffer, 0, readLen);
+                }
+            }
+        }
+    }
 
     public void process() {
         System.out.println("使用一键生成脚本（谱面目录使用 " + AFF_DIR + "）？");
@@ -301,18 +355,6 @@ public class AffToRecord {
     }
 
     /**
-     * 存储脚本生成信息的 map.
-     */
-    private final Map<File, Map<Integer, List<Request>>> processMap = new HashMap<>();
-
-    private static final Pattern P_AFF = Pattern.compile("[0-4]\\.aff");
-
-    /**
-     * 临时存放所有谱面文件与 Aff 实例的对应.
-     */
-    private final Map<File, Aff> affMap = new HashMap<>();
-
-    /**
      * 查找所有符合条件的谱面，并加入处理列表.
      *
      * @param file aff 文件或包含 aff 文件的文件夹
@@ -395,8 +437,6 @@ public class AffToRecord {
         }
     }
 
-    private static final Pattern P_APK = Pattern.compile("[0-9]+\\.[0-9]+\\.[0-9]+c");
-
     private void autoZip() {
         String version = null;
         File apk = getApk();
@@ -417,50 +457,6 @@ public class AffToRecord {
             System.out.println("开始打包：" + dir + " -> " + targetZip);
             zip(dir, targetZip);
             System.out.println("打包完毕：" + dir + " -> " + targetZip);
-        }
-    }
-
-    /**
-     * @param srcFileOrDir 要压缩的文件
-     * @param zipFile      压缩文件存放地方
-     */
-    private static void zip(File srcFileOrDir, File zipFile) {
-        try {
-            srcFileOrDir = srcFileOrDir.getCanonicalFile();
-            zipFile = zipFile.getCanonicalFile();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        try (ZipOutputStream outputStream = new ZipOutputStream(new FileOutputStream(zipFile))) {
-            zipFile(outputStream, srcFileOrDir, "");
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    /**
-     * @param zos          ZipOutputStream对象
-     * @param srcFileOrDir 要压缩的文件或文件夹
-     * @param basePath     条目根目录
-     */
-    private static void zipFile(ZipOutputStream zos, File srcFileOrDir, String basePath) throws IOException {
-        if (srcFileOrDir.isDirectory()) {
-            basePath = basePath + (basePath.isEmpty() ? "" : "/") + srcFileOrDir.getName();
-            //System.out.println("zip中的文件夹路径：" + basePath);
-            for (File f : Objects.requireNonNull(srcFileOrDir.listFiles())) {
-                zipFile(zos, f, basePath);
-            }
-        } else {
-            basePath = (basePath.isEmpty() ? "" : basePath + "/") + srcFileOrDir.getName();
-            //System.out.println("zip中的文件路径：" + basePath);
-            zos.putNextEntry(new ZipEntry(basePath));
-            try (FileInputStream input = new FileInputStream(srcFileOrDir)) {
-                int readLen;
-                byte[] buffer = new byte[1024 * 8];
-                while ((readLen = input.read(buffer, 0, buffer.length)) != -1) {
-                    zos.write(buffer, 0, readLen);
-                }
-            }
         }
     }
 }

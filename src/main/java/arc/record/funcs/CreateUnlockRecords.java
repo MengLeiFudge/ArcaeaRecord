@@ -18,11 +18,11 @@ import static arc.record.Utils.DIFFICULTY_STR;
  * @author MengLeiFudge
  */
 public class CreateUnlockRecords {
-    public CreateUnlockRecords() {
-    }
-
     private final Aff[] affs = new Aff[4];
     private File recordDir;
+
+    public CreateUnlockRecords() {
+    }
 
     public void process() {
         if (!init()) {
