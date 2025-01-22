@@ -256,8 +256,8 @@ public class AffToRecord {
      * 需要修改affDir，并将DEBUG设为true，然后再启动程序并运行。
      */
     private void test() {
-        affDir = new File(AFF_DIR, "dl_designant");
-        targetDifficulty[3] = true;
+        affDir = new File(AFF_DIR, "dl_init");
+        targetDifficulty[2] = true;
         mirror = Mirror.ORIGIN;
         resolution = Resolution.R16_9_1280_720;
         missAndMinPure = new MissAndMinPure("0", "0");

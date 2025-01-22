@@ -622,6 +622,9 @@ public class RecordThreadPool implements Runnable {
                 }
             }
         }
+        // 如果arcStarts里面有直蛇且该直蛇没有与其他蛇merge，说明这个蛇无用
+        // 为了不影响后续单点与蛇merge的逻辑，此处需要移除所有未merge的直蛇
+        arcStarts.removeIf(arc -> arc.getT1() == arc.getT2() && arc.getActions().size() == 2);
         Collections.sort(arcStarts);
        /* for (var arc : arcStarts) {
             System.out.println(arc.getColor() + " " + arc.getT1() + "-" + arc.getT2());
@@ -755,8 +758,17 @@ public class RecordThreadPool implements Runnable {
         TouchIdManager idManager = new TouchIdManager();
         List<SimpleAction> simpleActions = new ArrayList<>();
         for (var relatedActions : actionsList) {
-            int beginTime = relatedActions.getFirst().t();
+            // 如果最后两个 action 的时间差低于 25ms，可能是超短蛇/超短长条，此时需要延长抬手的时间
+            if (relatedActions.size() < 2) {
+                throw new IllegalStateException("操作数目小于2！谱面路径： " + aff.getAffFile().getPath());
+            }
+            Action endActionPre = relatedActions.get(relatedActions.size() - 2);
             Action endAction = relatedActions.getLast();
+            if (endAction.t() - endActionPre.t() < 25) {
+                endAction = new Action(endAction.x(), endAction.y(), endAction.t() + 25);
+                relatedActions.add(endAction);
+            }
+            int beginTime = relatedActions.getFirst().t();
             int endTime = endAction.t();
             int id = idManager.getId(beginTime, endTime);
             for (var action : relatedActions) {
