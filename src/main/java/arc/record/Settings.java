@@ -35,6 +35,10 @@ public class Settings {
      */
     public static final File CHAR_DIR = new File(ARC_DIR, "char");
     /**
+     * Link表情包文件夹.
+     */
+    public static final File STICKER_DIR = new File(ARC_DIR, "stickers");
+    /**
      * 项目目录的 songlist 文件.
      */
     public static final File SONG_LIST = new File("src/main/resources/songlist.json");

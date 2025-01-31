@@ -19,6 +19,7 @@ import static arc.record.Settings.AFF_DIR;
 import static arc.record.Settings.CHAR_DIR;
 import static arc.record.Settings.DL_DIR;
 import static arc.record.Settings.SONG_LIST;
+import static arc.record.Settings.STICKER_DIR;
 import static arc.record.Settings.getApk;
 
 /**
@@ -29,6 +30,7 @@ public class GetAllFiles {
     private File affDir;
     private File apk;
     private File charDir;
+    private File stickerDir;
     private ArrayList<File> fileList = new ArrayList<>();
 
     public GetAllFiles() {
@@ -86,6 +88,12 @@ public class GetAllFiles {
         System.out.println("回车表示 " + defFile);
         s = sc.nextLine();
         charDir = s.equals("") ? defFile : new File(s);
+
+        System.out.println("输入目标Link表情包文件夹路径");
+        defFile = STICKER_DIR;
+        System.out.println("回车表示 " + defFile);
+        s = sc.nextLine();
+        stickerDir = s.equals("") ? defFile : new File(s);
     }
 
     /**
@@ -218,10 +226,13 @@ public class GetAllFiles {
                 }
                 String pathInZip = entry.getName();
                 if (pathInZip.startsWith("assets/char/")) {
-                    String s = pathInZip.substring(12);
+                    String s = pathInZip.substring("assets/char/".length());
                     unZipFile(zipFile, entry, new File(charDir, s));
+                } else if (pathInZip.startsWith("assets/img/multiplayer/stickers/")) {
+                    String s = pathInZip.substring("assets/img/multiplayer/stickers/".length());
+                    unZipFile(zipFile, entry, new File(stickerDir, s));
                 } else if (pathInZip.startsWith("assets/songs/")) {
-                    String s = pathInZip.substring(13);
+                    String s = pathInZip.substring("assets/songs/".length());
                     unZipFile(zipFile, entry, new File(affDir, s));
                 }
             }
