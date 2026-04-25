@@ -10,13 +10,12 @@
 
     <properties>
         <!-- 全局变量配置 -->
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <lombok.version>1.18.34</lombok.version>
-        <slf4j.version>2.0.12</slf4j.version>
-        <logback.version>1.5.6</logback.version>
-        <javafx.version>23-ea+20</javafx.version>
+        <lombok.version>1.18.46</lombok.version>
+        <slf4j.version>2.0.17</slf4j.version>
+        <logback.version>1.5.32</logback.version>
+        <javafx.version>26.0.1</javafx.version>
     </properties>
 
     <dependencies>
@@ -46,48 +45,48 @@
         <dependency>
             <groupId>commons-io</groupId>
             <artifactId>commons-io</artifactId>
-            <version>2.16.1</version>
+            <version>2.22.0</version>
         </dependency>
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
-            <version>3.15.0</version>
+            <version>3.20.0</version>
         </dependency>
         <!-- xml -->
         <dependency>
             <groupId>org.dom4j</groupId>
             <artifactId>dom4j</artifactId>
-            <version>2.1.4</version>
+            <version>2.2.0</version>
         </dependency>
         <!-- json -->
         <dependency>
             <groupId>com.alibaba.fastjson2</groupId>
             <artifactId>fastjson2</artifactId>
-            <version>2.0.51.android8</version>
+            <version>2.0.61.android8</version>
         </dependency>
         <!-- 多线程 -->
         <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
-            <version>33.2.0-jre</version>
+            <version>33.6.0-jre</version>
         </dependency>
         <!-- http通信 -->
         <dependency>
             <groupId>org.apache.httpcomponents.client5</groupId>
             <artifactId>httpclient5-fluent</artifactId>
-            <version>5.4-alpha2</version>
+            <version>5.6.1</version>
         </dependency>
         <!-- 二维码 -->
         <dependency>
             <groupId>com.google.zxing</groupId>
             <artifactId>javase</artifactId>
-            <version>3.5.3</version>
+            <version>3.5.4</version>
         </dependency>
         <!-- sqlite数据库 -->
         <dependency>
             <groupId>org.xerial</groupId>
             <artifactId>sqlite-jdbc</artifactId>
-            <version>3.46.0.0</version>
+            <version>3.53.0.0</version>
         </dependency>
         <!-- jfx -->
         <dependency>
@@ -104,7 +103,7 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>5.11.0</version>
+            <version>6.0.3</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -114,10 +113,9 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.12.0</version>
+                <version>3.15.0</version>
                 <configuration>
-                    <source>${maven.compiler.source}</source>
-                    <target>${maven.compiler.target}</target>
+                    <release>${maven.compiler.release}</release>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>

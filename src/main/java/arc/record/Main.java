@@ -5,6 +5,7 @@ import java.util.Scanner;
 import arc.record.funcs.AffToRecord;
 import arc.record.funcs.CreateUnlockRecords;
 import arc.record.funcs.DeleteRecords;
+import arc.record.funcs.DownloadLatestApk;
 import arc.record.funcs.GetAllFiles;
 import arc.record.funcs.ModifySt3DB;
 
@@ -33,6 +34,23 @@ public class Main {
     public static final Scanner sc = new Scanner(System.in).useDelimiter("\n");
 
     public static void main(String[] args) {
+        if (args.length > 0 && switch (args[0]) {
+            case "6" -> true;
+            default -> false;
+        }) {
+            try {
+                if (args.length > 1) {
+                    System.out.println("APK_DOWNLOADED "
+                            + new DownloadLatestApk().downloadLatest(new java.io.File(args[1]).toPath()));
+                } else {
+                    System.out.println("APK_DOWNLOADED " + new DownloadLatestApk().downloadLatest());
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                System.exit(1);
+            }
+            return;
+        }
         while (true) {
             System.out.println("※ 该项目仅供学习研究之用 ※");
             System.out.println("选择功能：");
@@ -41,6 +59,7 @@ public class Main {
             System.out.println("3.生成 Tempestissimo/Testify 相关解锁脚本");
             System.out.println("4.删除指定文件夹（包括子文件夹）内所有脚本");
             System.out.println("5.修改本地分数存档st3数据库");
+            System.out.println("6.下载最新 Arcaea c 版安装包");
             System.out.println("0.结束");
             switch (sc.nextLine()) {
                 case "1" -> new GetAllFiles().process();
@@ -48,6 +67,13 @@ public class Main {
                 case "3" -> new CreateUnlockRecords().process();
                 case "4" -> new DeleteRecords().process();
                 case "5" -> new ModifySt3DB().process();
+                case "6" -> {
+                    try {
+                        new DownloadLatestApk().downloadLatestForConsole();
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
                 case "0" -> {
                     System.out.println("喜欢本项目的话，请给萌泪点个star！");
                     return;
