@@ -105,10 +105,11 @@ public class Arc extends Note {
 
     @Override
     public double[] getAffPoint(int time) {
-        if (time < t1 || time > t2) {
+        if ((long) time < (long) t1 - 1 || (long) time > (long) t2 + 1) {
             throw new IllegalArgumentException("时间 " + time + " 不在 [" + t1 + ", " + t2 + "] 区间内");
         }
-        double timeRatio = t1 == t2 ? 0.0 : (double) (time - t1) / (t2 - t1);
+        int pointTime = Math.max(t1, Math.min(time, t2));
+        double timeRatio = t1 == t2 ? 0.0 : (double) (pointTime - t1) / (t2 - t1);
         return switch (easing) {
             case "b" -> {
                 if (timeRatio < 0.5) {

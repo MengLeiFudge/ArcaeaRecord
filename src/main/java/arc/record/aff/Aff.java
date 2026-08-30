@@ -20,7 +20,7 @@ import lombok.AccessLevel;
 import lombok.Data;
 import lombok.Setter;
 
-import static arc.record.Utils.DIFFICULTY_STR;
+import static arc.record.Utils.getDifficultyStr;
 import static arc.record.Utils.getProcessedTitle;
 
 /**
@@ -90,8 +90,9 @@ public class Aff {
         if (sid.startsWith("dl_")) {
             sid = sid.substring(3);
         }
+        int ratingClass = Integer.parseInt(affFile.getName().substring(0, 1));
         this.songName = getProcessedTitle(sid);
-        this.diffStr = DIFFICULTY_STR[Integer.parseInt(affFile.getName().substring(0, 1))];
+        this.diffStr = getDifficultyStr(sid, ratingClass);
         readAffAndPreProcess();
     }
 
@@ -103,16 +104,23 @@ public class Aff {
         // 读取 aff 文件
         try (BufferedReader br = new BufferedReader(new FileReader(affFile))) {
             String line;
+            int lineNumber = 0;
             // 读取信息部分
             while ((line = br.readLine()) != null) {
-                line = line.replace(" ", "");
-                if ("-".equals(line)) {
-                    break;
-                }
-                if (line.startsWith("AudioOffset:")) {
-                    audioOffset = Integer.parseInt(line.substring("AudioOffset:".length()));
-                } else if (line.startsWith("TimingPointDensityFactor:")) {
-                    timingPointDensityFactor = Float.parseFloat(line.substring("TimingPointDensityFactor:".length()));
+                lineNumber++;
+                String sourceLine = line;
+                try {
+                    line = line.replace(" ", "");
+                    if ("-".equals(line)) {
+                        break;
+                    }
+                    if (line.startsWith("AudioOffset:")) {
+                        audioOffset = Integer.parseInt(line.substring("AudioOffset:".length()));
+                    } else if (line.startsWith("TimingPointDensityFactor:")) {
+                        timingPointDensityFactor = Float.parseFloat(line.substring("TimingPointDensityFactor:".length()));
+                    }
+                } catch (RuntimeException e) {
+                    throw createLineParseException(lineNumber, sourceLine, e);
                 }
             }
             // 创建两个 timingGroup
@@ -120,50 +128,56 @@ public class Aff {
             TimingGroup currTimingGroup = baseTimingGroup;
             // 读取按键部分
             while ((line = br.readLine()) != null) {
-                line = line.replace(" ", "");
-                if (line.startsWith("timinggroup")) {
-                    boolean noInput = false;
-                    String param = line.substring("timinggroup(".length(), line.length() - 2);
-                    if (!"".equals(param)) {
-                        // 带参 timinggroup，参数以 _ 分隔
-                        List<String> paramList = Arrays.stream(param.split("_")).toList();
-                        noInput = paramList.contains("noinput");
-                    }
-                    currTimingGroup = new TimingGroup(noInput);
-                } else if ("};".equals(line)) {
-                    processTimingGroup(currTimingGroup);
-                    timingGroupList.add(currTimingGroup);
-                    currTimingGroup = baseTimingGroup;
-                } else if (!currTimingGroup.noInput) {
-                    // 只有不是noInput的timingGroup才有必要处理里面的东西
-                    if (P_CLICK.matcher(line).matches()) {
-                        Click click = new Click(line);
-                        currTimingGroup.noteList.add(click);
-                    } else if (P_HOLD.matcher(line).matches()) {
-                        Hold hold = new Hold(line);
-                        currTimingGroup.noteList.add(hold);
-                    } else if (P_ARC.matcher(line).matches()) {
-                        Arc arc = new Arc(line);
-                        // 不处理黑线
-                        if (arc.getArctapTimingList().isEmpty() && !arc.isRealArc()) {
-                            continue;
+                lineNumber++;
+                String sourceLine = line;
+                try {
+                    line = line.replace(" ", "");
+                    if (line.startsWith("timinggroup")) {
+                        boolean noInput = false;
+                        String param = line.substring("timinggroup(".length(), line.length() - 2);
+                        if (!"".equals(param)) {
+                            // 带参 timinggroup，参数以 _ 分隔
+                            List<String> paramList = Arrays.stream(param.split("_")).toList();
+                            noInput = paramList.contains("noinput");
                         }
-                        if (!arc.isRealArc()) {
-                            // 多个天键
-                            currTimingGroup.noteList.addAll(arc.getArcTapList());
-                        } else {
-                            // 蛇需要添加到arcList中
-                            arcList.add(arc);
-                            currTimingGroup.noteList.add(arc);
+                        currTimingGroup = new TimingGroup(noInput);
+                    } else if ("};".equals(line)) {
+                        processTimingGroup(currTimingGroup);
+                        timingGroupList.add(currTimingGroup);
+                        currTimingGroup = baseTimingGroup;
+                    } else if (!currTimingGroup.noInput) {
+                        // 只有不是noInput的timingGroup才有必要处理里面的东西
+                        if (P_CLICK.matcher(line).matches()) {
+                            Click click = new Click(line);
+                            currTimingGroup.noteList.add(click);
+                        } else if (P_HOLD.matcher(line).matches()) {
+                            Hold hold = new Hold(line);
+                            currTimingGroup.noteList.add(hold);
+                        } else if (P_ARC.matcher(line).matches()) {
+                            Arc arc = new Arc(line);
+                            // 不处理黑线
+                            if (arc.getArctapTimingList().isEmpty() && !arc.isRealArc()) {
+                                continue;
+                            }
+                            if (!arc.isRealArc()) {
+                                // 多个天键
+                                currTimingGroup.noteList.addAll(arc.getArcTapList());
+                            } else {
+                                // 蛇需要添加到arcList中
+                                arcList.add(arc);
+                                currTimingGroup.noteList.add(arc);
+                            }
+                        } else if (P_TIMING.matcher(line).matches()) {
+                            Timing timing = new Timing(line);
+                            currTimingGroup.timingList.add(timing);
+                        } else if (P_SCENE_CONTROL.matcher(line).matches()) {
+                            // 能满足 P_SCENE_CONTROL 的只有 enwidencamera 语句
+                            SceneControl sceneControl = new SceneControl(line);
+                            sceneControlList.add(sceneControl);
                         }
-                    } else if (P_TIMING.matcher(line).matches()) {
-                        Timing timing = new Timing(line);
-                        currTimingGroup.timingList.add(timing);
-                    } else if (P_SCENE_CONTROL.matcher(line).matches()) {
-                        // 能满足 P_SCENE_CONTROL 的只有 enwidencamera 语句
-                        SceneControl sceneControl = new SceneControl(line);
-                        sceneControlList.add(sceneControl);
                     }
+                } catch (RuntimeException e) {
+                    throw createLineParseException(lineNumber, sourceLine, e);
                 }
             }
             processTimingGroup(baseTimingGroup);
@@ -234,6 +248,22 @@ public class Aff {
         for (var note : noteList) {
             noteCount += note.getNoteCount();
         }
+    }
+
+    /**
+     * 为行内解析异常补充输入谱面位置，同时保留原始异常。
+     *
+     * @param lineNumber 从 1 开始的物理行号
+     * @param sourceLine 未去除空格的原始行
+     * @param cause      原始解析异常
+     * @return 带谱面上下文的异常
+     */
+    private IllegalArgumentException createLineParseException(
+            int lineNumber, String sourceLine, RuntimeException cause) {
+        return new IllegalArgumentException(
+                "谱面解析失败：" + affFile.getAbsolutePath()
+                        + "，第 " + lineNumber + " 行：" + sourceLine,
+                cause);
     }
 
     /**
