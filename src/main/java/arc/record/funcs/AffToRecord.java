@@ -1,33 +1,27 @@
 package arc.record.funcs;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
-
+import arc.record.Utils;
 import arc.record.aff.Aff;
 import arc.record.record.func.RecordThreadPool;
 import arc.record.record.model.Mirror;
 import arc.record.record.model.MissAndMinPure;
 import arc.record.record.model.Request;
 import arc.record.record.model.Resolution;
+import org.apache.commons.io.FileUtils;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static arc.record.Main.sc;
-import static arc.record.Settings.AFF_DIR;
-import static arc.record.Settings.DEBUG_MODE;
-import static arc.record.Settings.VMS_DIR;
-import static arc.record.Settings.getApk;
+import static arc.record.Settings.*;
 
 /**
  * 通过用户输入，将谱面文件转为脚本.
@@ -58,6 +52,10 @@ public class AffToRecord {
      * 临时存放所有谱面文件与 Aff 实例的对应.
      */
     private final Map<File, Aff> affMap = new HashMap<>();
+    /**
+     * 按 songlist 发现的实际谱面文件；自动模式的多轮请求共用该列表。
+     */
+    private List<File> sourceAffFiles;
     private File affDir;
     private MissAndMinPure missAndMinPure;
     /**
@@ -115,7 +113,7 @@ public class AffToRecord {
 
     public void process() {
         System.out.println("使用一键生成脚本（谱面目录使用 " + AFF_DIR + "）？");
-        System.out.println("注：包含ftr、etr、byd 0L3%、1L3%、996w4%、991w4%、986w5%、981w5% 原版+镜像，以及全难度理论值原版");
+        System.out.println("注：包含ftr、etr、byd、ins 0L3%、1L3%、996w4%、991w4%、986w5%、981w5% 原版+镜像，以及全难度理论值原版");
         System.out.println("回车表示一键生成脚本");
         System.out.println(".表示将指定歌曲测试脚本直接放入operation records（需要先改好代码！）");
         System.out.println("输入其他内容表示自定义生成脚本");
@@ -283,9 +281,9 @@ public class AffToRecord {
 
         if (affDir.isDirectory()) {
             System.out.println("输入五个数字，指示需要生成哪些难度的脚本：");
-            System.out.println("0 表示禁用，1 表示启用，顺序为 pst、prs、ftr、byd、etr");
-            System.out.println("例如输入 00010 表示仅处理 byd 谱面文件");
-            System.out.println("回车表示 00111，即生成 ftr、byd、etr 谱面文件");
+            System.out.println("0 表示禁用，1 表示启用，顺序为 pst、prs、ftr、byd/ins、etr");
+            System.out.println("例如输入 00010 表示仅处理 byd 和 ins 谱面文件");
+            System.out.println("回车表示 00111，即生成 ftr、byd、ins、etr 谱面文件");
             s = sc.nextLine();
             if (s.isEmpty()) {
                 targetDifficulty[2] = true;
@@ -355,59 +353,134 @@ public class AffToRecord {
     }
 
     /**
-     * 查找所有符合条件的谱面，并加入处理列表.
+     * 将本轮目标难度的谱面加入处理列表；实际文件只在首次调用时按 songlist 发现一次。
      *
-     * @param file aff 文件或包含 aff 文件的文件夹
+     * @param source aff 文件、单曲目录或官谱根目录
      */
-    private void addRequests(File file) {
-        if (file.isDirectory()) {
-            // 忽略Arcade自动保存的谱面、教程、愚人节谱面，以及下架歌曲
-            if (file.getName().equals("Autosave")
-                    || file.getName().equals("Backup")
-                    || file.getName().equals("tutorial")
-                    || file.getName().equals("ignotusafterburn")
-                    || file.getName().equals("ignotusafterburn2")
-                    || file.getName().equals("redandblueandgreen")
-                    || file.getName().equals("singularityvvvip")
-                    || file.getName().equals("overdead")
-                    || file.getName().equals("mismal")
-                    || file.getName().equals("dl_particlearts")) {
-                return;
+    private void addRequests(File source) {
+        if (sourceAffFiles == null) {
+            sourceAffFiles = findAffFiles(source);
+        }
+        boolean explicitFile = source.isFile();
+        for (File file : sourceAffFiles) {
+            int difficulty = Integer.parseInt(file.getName().substring(0, 1));
+            if (!explicitFile && !targetDifficulty[difficulty]) {
+                continue;
             }
-            File[] listFiles = file.listFiles();
-            if (listFiles != null) {
-                for (File f : listFiles) {
-                    addRequests(f);
+            Aff aff;
+            if (affMap.containsKey(file)) {
+                aff = affMap.get(file);
+            } else {
+                aff = new Aff(file);
+                affMap.put(file, aff);
+            }
+            int note = aff.getNoteCount();
+            int miss = missAndMinPure.getMissNum(note);
+            int noShinyPure = missAndMinPure.getMinPureNum(note);
+            int key = miss * (note + 1) + noShinyPure;
+            File targetDir = this.targetDir == null ? file.getParentFile() : this.targetDir;
+            if (mirror == Mirror.ORIGIN || mirror == Mirror.BOTH) {
+                addRequest(file, key, new Request(targetDir, false, resolution));
+            }
+            if (mirror == Mirror.MIRROR || mirror == Mirror.BOTH) {
+                addRequest(file, key, new Request(targetDir, true, resolution));
+            }
+        }
+    }
+
+    /**
+     * 根据 songlist 枚举 source 范围内的预期谱面，并提示缺失文件。
+     *
+     * @param source aff 文件、单曲目录或官谱根目录
+     * @return 实际存在且可由 songlist 唯一定位的谱面文件
+     */
+    private List<File> findAffFiles(File source) {
+        if (source.isFile()) {
+            if (!P_AFF.matcher(source.getName()).matches()) {
+                return List.of();
+            }
+            File affFile = source.getAbsoluteFile();
+            String sid = normalizeSid(affFile.getParentFile().getName());
+            int ratingClass = Integer.parseInt(affFile.getName().substring(0, 1));
+            Utils.getDifficultyStr(sid, ratingClass);
+            return List.of(affFile);
+        }
+        if (!source.isDirectory()) {
+            System.out.println("谱面路径不存在：" + source.getAbsolutePath());
+            return List.of();
+        }
+
+        List<Utils.SongChart> charts = Utils.getSongCharts();
+        Map<String, List<Utils.SongChart>> chartsBySid = new HashMap<>();
+        for (Utils.SongChart chart : charts) {
+            chartsBySid.computeIfAbsent(chart.sid(), key -> new ArrayList<>()).add(chart);
+        }
+        String sourceSid = normalizeSid(source.getName());
+        if (chartsBySid.containsKey(sourceSid)) {
+            return findSongAffFiles(source, chartsBySid.get(sourceSid));
+        }
+
+        File[] directories = source.listFiles(File::isDirectory);
+        if (directories == null) {
+            throw new IllegalStateException("无法读取谱面根目录：" + source.getAbsolutePath());
+        }
+        Map<String, File> directoryBySid = new HashMap<>();
+        for (File directory : directories) {
+            String sid = normalizeSid(directory.getName());
+            if (!chartsBySid.containsKey(sid)) {
+                continue;
+            }
+            File previous = directoryBySid.putIfAbsent(sid, directory);
+            if (previous != null) {
+                boolean previousIsDownload = previous.getName().startsWith("dl_");
+                File downloadDirectory = previousIsDownload ? previous : directory;
+                File localDirectory = previousIsDownload ? directory : previous;
+                if (!FileUtils.deleteQuietly(downloadDirectory)) {
+                    throw new IllegalStateException("无法删除歌曲 " + sid + " 带有 dl_ 前缀的目录："
+                            + downloadDirectory.getAbsolutePath());
                 }
+                directoryBySid.put(sid, localDirectory);
+                System.out.println("歌曲 " + sid + " 的无前缀目录与 dl_ 前缀目录同时存在，"
+                        + "已经将带有 dl_ 前缀的文件夹删除：" + downloadDirectory.getAbsolutePath());
             }
-            return;
         }
-        String fileName = file.getName();
-        if (!P_AFF.matcher(fileName).matches()) {
-            return;
+
+        List<File> result = new ArrayList<>();
+        for (Utils.SongChart chart : charts) {
+            File songDirectory = directoryBySid.get(chart.sid());
+            if (songDirectory == null) {
+                File localDirectory = new File(source, chart.sid());
+                File downloadDirectory = new File(source, "dl_" + chart.sid());
+                System.out.println("缺少谱面：" + chart.sid() + "_" + chart.difficulty()
+                        + "（未找到 " + localDirectory.getAbsolutePath()
+                        + " 或 " + downloadDirectory.getAbsolutePath() + "）");
+                continue;
+            }
+            addSongAffFile(result, songDirectory, chart);
         }
-        int difficulty = Integer.parseInt(fileName.substring(0, 1));
-        if (!targetDifficulty[difficulty]) {
-            return;
+        return List.copyOf(result);
+    }
+
+    private List<File> findSongAffFiles(File songDirectory, List<Utils.SongChart> charts) {
+        List<File> result = new ArrayList<>();
+        for (Utils.SongChart chart : charts) {
+            addSongAffFile(result, songDirectory, chart);
         }
-        Aff aff;
-        if (affMap.containsKey(file)) {
-            aff = affMap.get(file);
+        return List.copyOf(result);
+    }
+
+    private void addSongAffFile(List<File> result, File songDirectory, Utils.SongChart chart) {
+        File affFile = new File(songDirectory, chart.ratingClass() + ".aff");
+        if (affFile.isFile()) {
+            result.add(affFile);
         } else {
-            aff = new Aff(file);
-            affMap.put(file, aff);
+            System.out.println("缺少谱面：" + chart.sid() + "_" + chart.difficulty()
+                    + "（" + affFile.getAbsolutePath() + "）");
         }
-        int note = aff.getNoteCount();
-        int miss = missAndMinPure.getMissNum(note);
-        int noShinyPure = missAndMinPure.getMinPureNum(note);
-        int key = miss * (note + 1) + noShinyPure;
-        File targetDir = this.targetDir == null ? file.getParentFile() : this.targetDir;
-        if (mirror == Mirror.ORIGIN || mirror == Mirror.BOTH) {
-            addRequest(file, key, new Request(targetDir, false, resolution));
-        }
-        if (mirror == Mirror.MIRROR || mirror == Mirror.BOTH) {
-            addRequest(file, key, new Request(targetDir, true, resolution));
-        }
+    }
+
+    private static String normalizeSid(String directoryName) {
+        return directoryName.startsWith("dl_") ? directoryName.substring(3) : directoryName;
     }
 
     /**
