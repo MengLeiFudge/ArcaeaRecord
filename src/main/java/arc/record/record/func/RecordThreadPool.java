@@ -570,11 +570,13 @@ public class RecordThreadPool implements Runnable {
     /**
      * 连接同色蛇/碎蛇.
      * <p>
-     * 不考虑异色蛇的连接；不考虑同时出现同色蛇的情况。
+     * 不考虑异色蛇的连接；同色蛇同时出现时，每条蛇保留独立的连接链.
      * <p>
      * 步骤如下：
-     * 1.按照颜色给蛇分类。不需要排序，因为noteList本身就是已经排序的
-     * 2.如果前者蛇尾距离后者蛇头时间差值（使用绝对值）小于 100 ms，则连接这两个蛇
+     * 1.按照颜色给蛇分类。不需要排序，因为noteList本身已经排序
+     * 2.每种颜色维护当前仍可能连接后续蛇头的所有链尾
+     * 3.从时间差小于50ms的链尾中，优先选择端点距离最近、其次时间差最小的链尾
+     * 4.每个后续蛇只连接一个链尾，并用自身替换该链尾
      *
      * @param noteList 要处理的按键列表
      */
@@ -593,33 +595,44 @@ public class RecordThreadPool implements Runnable {
                 });
         arcStarts = new ArrayList<>();
         for (List<Arc> arcs : arcsMap.values()) {
-            // arcs是某个颜色的所有蛇
-            if (arcs.isEmpty()) {
-                continue;
-            }
-            Arc previousArc = arcs.getFirst();
-            arcStarts.add(previousArc);
-            for (int i = 1; i < arcs.size(); i++) {
-                Arc arc = arcs.get(i);
-                // 判断arc能否与lastArc连接
-                if (Math.abs(previousArc.getT2() - arc.getT1()) < 50) {
-                    // 蛇尾与下一个蛇的蛇头时间差小于50ms，可能需要连接
-                    // 分四种情况：普通蛇+普通蛇，普通蛇+直蛇，直蛇+普通蛇，直蛇+直蛇
-                    // 普通蛇+普通蛇：正常合并
-                    // 普通蛇+直蛇：无视直蛇
-                    // 直蛇+普通蛇：正常合并。这里暂且不考虑直蛇的方向问题
-                    // 直蛇+直蛇：无视后一个直蛇
-                    if (arc.getT1() != arc.getT2()) {
-                        Note.mergeNotes(previousArc, arc, actionUnionFind);
-                        if (DEBUG_MODE) {
-                            System.out.println(previousArc + " + " + arc);
-                        }
-                        previousArc = arc;
+            List<Arc> chainTails = new ArrayList<>();
+            for (Arc arc : arcs) {
+                chainTails.removeIf(tail -> arc.getT1() - tail.getT2() >= 50);
+                int bestTailIndex = -1;
+                int minTimeDistance = Integer.MAX_VALUE;
+                double minPositionDistance = Double.MAX_VALUE;
+                for (int i = 0; i < chainTails.size(); i++) {
+                    Arc tail = chainTails.get(i);
+                    int timeDistance = Math.abs(tail.getT2() - arc.getT1());
+                    if (timeDistance >= 50) {
+                        continue;
                     }
-                } else {
-                    previousArc = arc;
-                    arcStarts.add(arc);
+                    double xDistance = tail.getX2() - arc.getX1();
+                    double yDistance = tail.getY2() - arc.getY1();
+                    double positionDistance = xDistance * xDistance + yDistance * yDistance;
+                    int positionComparison = Double.compare(positionDistance, minPositionDistance);
+                    if (positionComparison < 0
+                            || positionComparison == 0 && timeDistance < minTimeDistance) {
+                        bestTailIndex = i;
+                        minTimeDistance = timeDistance;
+                        minPositionDistance = positionDistance;
+                    }
                 }
+                if (bestTailIndex < 0) {
+                    chainTails.add(arc);
+                    arcStarts.add(arc);
+                    continue;
+                }
+                // 普通蛇+直蛇时无视直蛇，直蛇作为链头时仍可连接后续普通蛇。
+                if (arc.getT1() == arc.getT2()) {
+                    continue;
+                }
+                Arc previousArc = chainTails.get(bestTailIndex);
+                Note.mergeNotes(previousArc, arc, actionUnionFind);
+                if (DEBUG_MODE) {
+                    System.out.println(previousArc + " + " + arc);
+                }
+                chainTails.set(bestTailIndex, arc);
             }
         }
         // 如果arcStarts里面有直蛇且该直蛇没有与其他蛇merge，说明这个蛇无用
