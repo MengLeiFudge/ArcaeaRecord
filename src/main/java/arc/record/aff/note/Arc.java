@@ -15,19 +15,45 @@ import static arc.record.Utils.dfXY;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class Arc extends Note {
+    /**
+     * Arc 起点在 AFF 坐标系中的横坐标.
+     */
     final double x1;
+    /**
+     * Arc 终点在 AFF 坐标系中的横坐标.
+     */
     final double x2;
+    /**
+     * Arc 的缓动类型，取值为 b、s、si、so、sisi、siso、sosi 或 soso.
+     */
     final String easing;
+    /**
+     * Arc 起点在 AFF 坐标系中的纵坐标.
+     */
     final double y1;
+    /**
+     * Arc 终点在 AFF 坐标系中的纵坐标.
+     */
     final double y2;
+    /**
+     * Arc 的颜色编号，取值范围为 0-3.
+     */
     final int color;
+    /**
+     * Arc 的视觉平滑度，值越大轨迹越光滑，缺失时为 1.0.
+     */
+    @EqualsAndHashCode.Exclude
+    final double smoothness;
+    /**
+     * 是否为实体 Arc，true 表示实体 Arc，false 表示非实体 Arc.
+     */
     final boolean isRealArc;
     /**
-     * 存放所有的 arctap.
+     * Arc 上的 arctap 时间点列表，每项为非负整数毫秒时间点，允许为空列表.
      */
     final List<Integer> arctapTimingList = new ArrayList<>();
     /**
-     * 指示该蛇是否具有头判定.
+     * 是否具有头判定，true 表示有头判定，false 表示无头判定.
      */
     boolean hasHead = false;
 
@@ -47,6 +73,7 @@ public class Arc extends Note {
         this.y1 = Double.parseDouble(data[5]);
         this.y2 = Double.parseDouble(data[6]);
         this.color = Integer.parseInt(data[7]);
+        this.smoothness = data.length > 10 ? Double.parseDouble(data[10]) : 1.0;
         // data[8] 是打击音效，无用
         if (!containsArctap) {
             // Arc不含天键情况，可能为实蛇可能为虚蛇

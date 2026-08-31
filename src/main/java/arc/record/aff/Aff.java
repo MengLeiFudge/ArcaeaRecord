@@ -30,13 +30,33 @@ import static arc.record.Utils.getProcessedTitle;
  */
 @Data
 public class Aff {
+    private static final String UNSIGNED_NUMBER = "[0-9]+(?:\\.[0-9]+)?";
+    private static final String NUMBER = "-?" + UNSIGNED_NUMBER;
+    private static final Pattern P_AUDIO_OFFSET = Pattern.compile("AudioOffset:-?[0-9]+");
+    private static final Pattern P_TIMING_POINT_DENSITY_FACTOR = Pattern.compile(
+            "TimingPointDensityFactor:" + NUMBER);
+    private static final Pattern P_HEADER = Pattern.compile("[^:]+:.*");
     private static final Pattern P_CLICK = Pattern.compile("\\([0-9]+,[0-5]\\);");
     private static final Pattern P_HOLD = Pattern.compile("hold\\([0-9]+,[0-9]+,[0-5]\\);");
-    private static final Pattern P_ARC = Pattern.compile("arc\\([0-9]+,[0-9]+,-?[0-9.]+,-?[0-9.]+," +
-            "(b|s|si|so|sisi|siso|sosi|soso),-?[0-9.]+,-?[0-9.]+,[0-3],.+,(true|false)\\)" +
-            "(\\[arctap\\([0-9]+\\)(,arctap\\([0-9]+\\))*])?;");
-    private static final Pattern P_TIMING = Pattern.compile("timing\\([0-9]+,-?[0-9.]+,[0-9.]+\\);");
-    private static final Pattern P_SCENE_CONTROL = Pattern.compile("scenecontrol\\([0-9]+,enwidencamera,[0-9.]+,[01]\\);");
+    private static final Pattern P_ARC = Pattern.compile(
+            "arc\\([0-9]+,[0-9]+," + NUMBER + "," + NUMBER + ","
+                    + "(b|s|si|so|sisi|siso|sosi|soso)," + NUMBER + "," + NUMBER
+                    + ",[0-3],[^,]+,(true|false|designant)(," + NUMBER + ")?\\)"
+                    + "(\\[arctap\\([0-9]+\\)(,arctap\\([0-9]+\\))*])?;");
+    private static final Pattern P_TIMING = Pattern.compile(
+            "timing\\([0-9]+," + NUMBER + "," + UNSIGNED_NUMBER + "\\);");
+    private static final Pattern P_CAMERA = Pattern.compile(
+            "camera\\([0-9]+," + NUMBER + "," + NUMBER + "," + NUMBER + ","
+                    + NUMBER + "," + NUMBER + "," + NUMBER + ",(qi|qo|l|reset|s),"
+                    + UNSIGNED_NUMBER + "\\);");
+    private static final Pattern P_SCENE_CONTROL = Pattern.compile(
+            "scenecontrol\\([0-9]+,[a-z]+(," + NUMBER + ",-?[0-9]+)?\\);");
+    private static final Pattern P_ENWIDEN_CAMERA = Pattern.compile(
+            "scenecontrol\\([0-9]+,enwidencamera," + UNSIGNED_NUMBER + ",[01]\\);");
+    private static final Pattern P_TIMING_GROUP = Pattern.compile(
+            "timinggroup\\((?:[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*)?\\)\\{");
+    private static final Pattern P_FLICK = Pattern.compile(
+            "flick\\([0-9]+," + NUMBER + "," + NUMBER + "," + NUMBER + "," + NUMBER + "\\);");
     /**
      * 谱面文件对象.
      */
@@ -110,14 +130,21 @@ public class Aff {
                 lineNumber++;
                 String sourceLine = line;
                 try {
-                    line = line.replace(" ", "");
+                    line = line.stripLeading();
+                    if (line.isEmpty()) {
+                        continue;
+                    }
                     if ("-".equals(line)) {
                         break;
                     }
                     if (line.startsWith("AudioOffset:")) {
+                        requireFormat(line, P_AUDIO_OFFSET, "AudioOffset");
                         audioOffset = Integer.parseInt(line.substring("AudioOffset:".length()));
                     } else if (line.startsWith("TimingPointDensityFactor:")) {
+                        requireFormat(line, P_TIMING_POINT_DENSITY_FACTOR, "TimingPointDensityFactor");
                         timingPointDensityFactor = Float.parseFloat(line.substring("TimingPointDensityFactor:".length()));
+                    } else if (!P_HEADER.matcher(line).matches()) {
+                        throw new IllegalArgumentException("无法识别的文件头行");
                     }
                 } catch (RuntimeException e) {
                     throw createLineParseException(lineNumber, sourceLine, e);
@@ -131,8 +158,12 @@ public class Aff {
                 lineNumber++;
                 String sourceLine = line;
                 try {
-                    line = line.replace(" ", "");
+                    line = line.stripLeading();
+                    if (line.isEmpty()) {
+                        continue;
+                    }
                     if (line.startsWith("timinggroup")) {
+                        requireFormat(line, P_TIMING_GROUP, "timinggroup");
                         boolean noInput = false;
                         String param = line.substring("timinggroup(".length(), line.length() - 2);
                         if (!"".equals(param)) {
@@ -145,36 +176,57 @@ public class Aff {
                         processTimingGroup(currTimingGroup);
                         timingGroupList.add(currTimingGroup);
                         currTimingGroup = baseTimingGroup;
-                    } else if (!currTimingGroup.noInput) {
-                        // 只有不是noInput的timingGroup才有必要处理里面的东西
-                        if (P_CLICK.matcher(line).matches()) {
+                    } else if (line.startsWith("(")) {
+                        requireFormat(line, P_CLICK, "tap");
+                        if (!currTimingGroup.noInput) {
                             Click click = new Click(line);
                             currTimingGroup.noteList.add(click);
-                        } else if (P_HOLD.matcher(line).matches()) {
+                        }
+                    } else if (line.startsWith("hold")) {
+                        requireFormat(line, P_HOLD, "hold");
+                        if (!currTimingGroup.noInput) {
                             Hold hold = new Hold(line);
                             currTimingGroup.noteList.add(hold);
-                        } else if (P_ARC.matcher(line).matches()) {
-                            Arc arc = new Arc(line);
-                            // 不处理黑线
-                            if (arc.getArctapTimingList().isEmpty() && !arc.isRealArc()) {
-                                continue;
-                            }
-                            if (!arc.isRealArc()) {
-                                // 多个天键
-                                currTimingGroup.noteList.addAll(arc.getArcTapList());
-                            } else {
-                                // 蛇需要添加到arcList中
-                                arcList.add(arc);
-                                currTimingGroup.noteList.add(arc);
-                            }
-                        } else if (P_TIMING.matcher(line).matches()) {
+                        }
+                    } else if (line.startsWith("arc")) {
+                        requireFormat(line, P_ARC, "arc");
+                        if (currTimingGroup.noInput) {
+                            continue;
+                        }
+                        Arc arc = new Arc(line);
+                        // 不处理黑线
+                        if (arc.getArctapTimingList().isEmpty() && !arc.isRealArc()) {
+                            continue;
+                        }
+                        if (!arc.isRealArc()) {
+                            // 多个天键
+                            currTimingGroup.noteList.addAll(arc.getArcTapList());
+                        } else {
+                            // 蛇需要添加到arcList中
+                            arcList.add(arc);
+                            currTimingGroup.noteList.add(arc);
+                        }
+                    } else if (line.startsWith("timing")) {
+                        requireFormat(line, P_TIMING, "timing");
+                        if (!currTimingGroup.noInput) {
                             Timing timing = new Timing(line);
                             currTimingGroup.timingList.add(timing);
-                        } else if (P_SCENE_CONTROL.matcher(line).matches()) {
-                            // 能满足 P_SCENE_CONTROL 的只有 enwidencamera 语句
-                            SceneControl sceneControl = new SceneControl(line);
-                            sceneControlList.add(sceneControl);
                         }
+                    } else if (line.startsWith("camera")) {
+                        requireFormat(line, P_CAMERA, "camera");
+                    } else if (line.startsWith("scenecontrol")) {
+                        requireFormat(line, P_SCENE_CONTROL, "scenecontrol");
+                        if (line.contains(",enwidencamera,") || line.contains(",enwidencamera)")) {
+                            requireFormat(line, P_ENWIDEN_CAMERA, "enwidencamera scenecontrol");
+                            if (!currTimingGroup.noInput) {
+                                SceneControl sceneControl = new SceneControl(line);
+                                sceneControlList.add(sceneControl);
+                            }
+                        }
+                    } else if (line.startsWith("flick")) {
+                        requireFormat(line, P_FLICK, "flick");
+                    } else {
+                        throw new IllegalArgumentException("无法识别的谱面行");
                     }
                 } catch (RuntimeException e) {
                     throw createLineParseException(lineNumber, sourceLine, e);
@@ -247,6 +299,19 @@ public class Aff {
         // 计算 noteCount
         for (var note : noteList) {
             noteCount += note.getNoteCount();
+        }
+    }
+
+    /**
+     * 校验规范化后的谱面行是否符合已识别类别的完整格式。
+     *
+     * @param line    去除前导空白后的谱面行
+     * @param pattern 该行类别的完整格式
+     * @param type    用于错误消息的行类别
+     */
+    private static void requireFormat(String line, Pattern pattern, String type) {
+        if (!pattern.matcher(line).matches()) {
+            throw new IllegalArgumentException(type + " 行格式不符合预期");
         }
     }
 
