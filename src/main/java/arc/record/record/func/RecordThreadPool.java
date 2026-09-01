@@ -266,9 +266,16 @@ public class RecordThreadPool implements Runnable {
                 actionsList.add(noteActions);
             }
         }
-        // 排序
+        // 排序；同一触控在每个毫秒只能有一个位置，冲突操作依次向后顺延。
         for (var relatedActions : actionsList) {
             Collections.sort(relatedActions);
+            for (int i = 1; i < relatedActions.size(); i++) {
+                Action previousAction = relatedActions.get(i - 1);
+                Action action = relatedActions.get(i);
+                if (action.t() <= previousAction.t()) {
+                    relatedActions.set(i, new Action(action.x(), action.y(), previousAction.t() + 1));
+                }
+            }
         }
         actionsList.removeIf(List::isEmpty);
         actionsList.sort(Comparator.comparingInt(list -> list.get(0).t()));
@@ -568,15 +575,11 @@ public class RecordThreadPool implements Runnable {
     }
 
     /**
-     * 连接同色蛇/碎蛇.
+     * 将同色蛇合并为单一触控操作.
      * <p>
-     * 不考虑异色蛇的连接；同色蛇同时出现时，每条蛇保留独立的连接链.
-     * <p>
-     * 步骤如下：
-     * 1.按照颜色给蛇分类。不需要排序，因为noteList本身已经排序
-     * 2.每种颜色维护当前仍可能连接后续蛇头的所有链尾
-     * 3.从时间差小于50ms的链尾中，优先选择端点距离最近、其次时间差最小的链尾
-     * 4.每个后续蛇只连接一个链尾，并用自身替换该链尾
+     * 同一颜色在连续时间区间内只使用一个触控点。普通首尾连接沿用既有合并规则；
+     * 多条蛇时间重叠时保留全部采样操作，使同一触控点按时间顺序在各条蛇之间移动。
+     * 时间间隔达到50ms时开始新的触控区间。
      *
      * @param noteList 要处理的按键列表
      */
@@ -595,49 +598,41 @@ public class RecordThreadPool implements Runnable {
                 });
         arcStarts = new ArrayList<>();
         for (List<Arc> arcs : arcsMap.values()) {
-            List<Arc> chainTails = new ArrayList<>();
+            Arc componentStart = null;
+            Arc componentEnd = null;
+            boolean hasTimedArc = false;
             for (Arc arc : arcs) {
-                chainTails.removeIf(tail -> arc.getT1() - tail.getT2() >= 50);
-                int bestTailIndex = -1;
-                int minTimeDistance = Integer.MAX_VALUE;
-                double minPositionDistance = Double.MAX_VALUE;
-                for (int i = 0; i < chainTails.size(); i++) {
-                    Arc tail = chainTails.get(i);
-                    int timeDistance = Math.abs(tail.getT2() - arc.getT1());
-                    if (timeDistance >= 50) {
-                        continue;
+                if (componentEnd == null || arc.getT1() - componentEnd.getT2() >= 50) {
+                    componentStart = arc;
+                    componentEnd = arc;
+                    hasTimedArc = arc.getT1() != arc.getT2();
+                    if (hasTimedArc) {
+                        arcStarts.add(componentStart);
                     }
-                    double xDistance = tail.getX2() - arc.getX1();
-                    double yDistance = tail.getY2() - arc.getY1();
-                    double positionDistance = xDistance * xDistance + yDistance * yDistance;
-                    int positionComparison = Double.compare(positionDistance, minPositionDistance);
-                    if (positionComparison < 0
-                            || positionComparison == 0 && timeDistance < minTimeDistance) {
-                        bestTailIndex = i;
-                        minTimeDistance = timeDistance;
-                        minPositionDistance = positionDistance;
-                    }
-                }
-                if (bestTailIndex < 0) {
-                    chainTails.add(arc);
-                    arcStarts.add(arc);
                     continue;
                 }
-                // 普通蛇+直蛇时无视直蛇，直蛇作为链头时仍可连接后续普通蛇。
+                // 普通蛇后的直蛇不延长触控区间；以直蛇开头时仍可连接后续普通蛇。
                 if (arc.getT1() == arc.getT2()) {
                     continue;
                 }
-                Arc previousArc = chainTails.get(bestTailIndex);
-                Note.mergeNotes(previousArc, arc, actionUnionFind);
-                if (DEBUG_MODE) {
-                    System.out.println(previousArc + " + " + arc);
+                boolean extendsComponent = arc.getT2() >= componentEnd.getT2();
+                if (extendsComponent && Math.abs(componentEnd.getT2() - arc.getT1()) < 50) {
+                    Note.mergeNotes(componentEnd, arc, actionUnionFind);
+                } else {
+                    actionUnionFind.merge(componentStart.getFirstAction(), arc.getFirstAction());
                 }
-                chainTails.set(bestTailIndex, arc);
+                if (!hasTimedArc) {
+                    arcStarts.add(componentStart);
+                    hasTimedArc = true;
+                }
+                if (extendsComponent) {
+                    componentEnd = arc;
+                }
+                if (DEBUG_MODE) {
+                    System.out.println(componentStart + " + " + arc);
+                }
             }
         }
-        // 如果arcStarts里面有直蛇且该直蛇没有与其他蛇merge，说明这个蛇无用
-        // 为了不影响后续单点与蛇merge的逻辑，此处需要移除所有未merge的直蛇
-        arcStarts.removeIf(arc -> arc.getT1() == arc.getT2() && arc.getActions().size() == 2);
         Collections.sort(arcStarts);
        /* for (var arc : arcStarts) {
             System.out.println(arc.getColor() + " " + arc.getT1() + "-" + arc.getT2());
