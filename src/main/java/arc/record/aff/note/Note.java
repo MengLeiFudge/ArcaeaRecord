@@ -31,6 +31,31 @@ public abstract class Note implements Serializable, Comparable<Note> {
     int t2;
 
     /**
+     * 解析阶段分配的稳定来源身份；深拷贝和变体修改后保持不变。
+     */
+    int sourceId = -1;
+
+    /**
+     * 来源 timinggroup 的稳定编号；基础组为 0。
+     */
+    int timingGroupId;
+
+    /**
+     * 指示来源 timinggroup 是否具有 noinput 参数。
+     */
+    boolean noInput;
+
+    /**
+     * 起始 timing 的绝对 BPM，已应用高 BPM 折半但尚未乘密度系数。
+     */
+    double timingBpm;
+
+    /**
+     * 长键判定公式使用的绝对 BPM，已应用高 BPM 折半和密度系数。
+     */
+    double judgeBpm;
+
+    /**
      * 根据按键所在 timing 的 bpm 计算的判定块间隔.
      */
     float beatTime;

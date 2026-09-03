@@ -7,10 +7,16 @@ import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -18,17 +24,16 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import arc.record.aff.Aff;
-import arc.record.aff.action.Action;
-import arc.record.aff.note.Arc;
+import arc.record.aff.judge.ChartJudgementModel;
 import arc.record.aff.note.ArcTap;
 import arc.record.aff.note.Click;
-import arc.record.aff.note.Hold;
 import arc.record.aff.note.Note;
 import arc.record.record.model.Request;
 import arc.record.record.model.Resolution;
 import arc.record.record.model.SimpleAction;
-import arc.record.record.model.TouchIdManager;
-import arc.record.utils.UnionFind;
+import arc.record.record.plan.TouchScheduler;
+import arc.record.record.plan.TouchStroke;
+import arc.record.record.plan.TouchStrokeRenderer;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
@@ -38,516 +43,279 @@ import org.apache.commons.lang3.SerializationUtils;
 import static arc.record.Settings.CLICK_TIME;
 import static arc.record.Settings.DEBUG_MODE;
 import static arc.record.Settings.EFFECT_TIME;
-import static arc.record.Settings.FIRST_NOTE_TIME;
-import static arc.record.Settings.TOUCH_SAMPLE_FREQUENCY;
 import static arc.record.Utils.THREAD_NUM;
 import static arc.record.Utils.dfTime;
-import static java.lang.Thread.sleep;
 
 /**
- * 可生成脚本的线程池，调用 {@link #process} 以生成脚本.
+ * 可生成脚本的线程池，调用 {@link #process} 以生成脚本。
  *
  * @author MengLeiFudge
  */
-public class RecordThreadPool implements Runnable {
+public class RecordThreadPool {
     private static final DecimalFormat df = new DecimalFormat("0.00%");
-    private static Map<File, Aff> affMap;
-    private static Map<File, Map<Integer, List<Request>>> processMap;
-    private static List<File> processFileList;
-    private static int processedNum;
-    private final int threadNo;
-    /**
-     * 存储所有代表蛇头的 arc，便于其他方法使用.
-     */
-    private List<Arc> arcStarts;
 
-    private RecordThreadPool(int threadNo) {
-        this.threadNo = threadNo;
-    }
-
-    public static void process(Map<File, Map<Integer, List<Request>>> processMap) {
+    public static Set<File> process(Map<File, Map<Integer, List<Request>>> processMap) {
         Map<File, Aff> affMap = new HashMap<>();
-        for (var file : processMap.keySet()) {
-            Aff aff = new Aff(file);
-            affMap.put(file, aff);
+        for (File file : processMap.keySet()) {
+            affMap.put(file, new Aff(file));
         }
-        process(affMap, processMap);
+        return process(affMap, processMap);
     }
 
     /**
-     * 多线程生成脚本.
+     * 将每张谱面作为独立任务动态分配给转换线程。
      *
+     * @param affMap     已解析谱面
      * @param processMap 处理需求
+     * @return 本轮成功写出的脚本文件
      */
-    public static void process(Map<File, Aff> affMap, Map<File, Map<Integer, List<Request>>> processMap) {
+    public static Set<File> process(Map<File, Aff> affMap,
+                                    Map<File, Map<Integer, List<Request>>> processMap) {
         long startTime = System.currentTimeMillis();
-        // 初始化数据，判断是否需要处理
-        RecordThreadPool.affMap = affMap;
-        RecordThreadPool.processMap = processMap;
-        processFileList = processMap.keySet().stream().toList();
-        processedNum = 0;
         int targetNum = 0;
-        for (var map : processMap.values()) {
-            for (var list : map.values()) {
+        for (Map<Integer, List<Request>> map : processMap.values()) {
+            for (List<Request> list : map.values()) {
                 targetNum += list.size();
             }
         }
         if (targetNum == 0) {
             System.out.println("没有需要生成的脚本！");
-            return;
+            return Set.of();
         }
-        // 建立线程池，开始多线程处理
+
+        List<File> processFiles = new ArrayList<>(processMap.keySet());
+        if (DEBUG_MODE && processFiles.size() > 1) {
+            throw new IllegalStateException("DEBUG开启且谱面文件数目大于1！");
+        }
+        processFiles.sort(Comparator
+                .<File>comparingLong(file -> estimateProcessCost(affMap.get(file), processMap.get(file)))
+                .reversed()
+                .thenComparing(File::getAbsolutePath));
+
+        int threadNum = Math.min(THREAD_NUM, processFiles.size());
         ExecutorService pool = new ThreadPoolExecutor(
-                THREAD_NUM, THREAD_NUM,
+                threadNum, threadNum,
                 0L, TimeUnit.MILLISECONDS,
                 new LinkedBlockingQueue<>(),
                 new ConvertThreadFactory());
-        for (int i = 0; i < THREAD_NUM; i++) {
-            pool.execute(new RecordThreadPool(i));
+        ExecutorCompletionService<FileResult> completionService = new ExecutorCompletionService<>(pool);
+        List<Future<FileResult>> futures = new ArrayList<>();
+        for (File file : processFiles) {
+            futures.add(completionService.submit(
+                    () -> new RecordThreadPool().processFile(
+                            file, affMap.get(file), processMap.get(file))));
         }
         pool.shutdown();
-        // 等待处理完成
+
+        int processedNum = 0;
+        int printedPercent = -1;
+        Set<File> recordFiles = new HashSet<>();
         try {
-            while (!pool.isTerminated()) {
-                System.out.println("转换进度：" + df.format((double) processedNum / targetNum));
-                sleep(1000);
+            for (int i = 0; i < processFiles.size(); i++) {
+                FileResult result = completionService.take().get();
+                processedNum += result.processedNum();
+                recordFiles.addAll(result.recordFiles());
+                int percent = processedNum * 100 / targetNum;
+                if (percent != printedPercent) {
+                    System.out.println("转换进度：" + df.format((double) processedNum / targetNum));
+                    printedPercent = percent;
+                }
             }
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            futures.forEach(future -> future.cancel(true));
+            pool.shutdownNow();
             Thread.currentThread().interrupt();
+            throw new IllegalStateException("脚本转换被中断", e);
+        } catch (ExecutionException e) {
+            futures.forEach(future -> future.cancel(true));
+            pool.shutdownNow();
+            throw new IllegalStateException("脚本转换任务失败", e.getCause());
+        } finally {
+            if (!pool.isTerminated()) {
+                pool.shutdownNow();
+            }
         }
-        // 处理完毕，输出处理时间
-        System.out.println("转换进度：" + df.format((double) processedNum / targetNum));
+
         long endTime = System.currentTimeMillis() - startTime;
         String minuteStr = endTime >= 60000 ? " " + (int) (endTime / 60000) + " min" : "";
         endTime %= 60000;
         String secondStr = endTime >= 1000 ? " " + (int) (endTime / 1000) + " s" : "";
         endTime %= 1000;
-        String milliStr = " " + endTime + " ms";
-        System.out.println("处理完毕，用时" + minuteStr + secondStr + milliStr);
+        System.out.println("处理完毕，用时" + minuteStr + secondStr + " " + endTime + " ms");
+        return Set.copyOf(recordFiles);
     }
 
-    private static void add(JSONArray points, SimpleAction simpleAction, boolean mirror, Resolution resolution) {
-        JSONObject obj = new JSONObject();
-        obj.put("id", simpleAction.id());
-        obj.put("x", mirror ? resolution.getMaxX() - simpleAction.x() : simpleAction.x());
-        obj.put("y", simpleAction.y());
-        obj.put("state", simpleAction.getState());
-        points.add(obj);
+    private static long estimateProcessCost(Aff aff, Map<Integer, List<Request>> requestMap) {
+        int requestNum = requestMap.values().stream().mapToInt(List::size).sum();
+        return (long) Math.max(1, aff.getNoteCount()) * (requestMap.size() + requestNum);
+    }
+
+    private static void add(JSONArray points, SimpleAction action,
+                            boolean mirror, Resolution resolution) {
+        JSONObject point = new JSONObject();
+        point.put("id", action.id());
+        point.put("x", mirror ? resolution.getMaxX() - action.x() : action.x());
+        point.put("y", action.y());
+        point.put("state", action.getState());
+        points.add(point);
     }
 
     /**
-     * 某个线程处理某个谱面文件的所有脚本请求.
-     * <p>
-     * 步骤如下：
-     * <ul>
-     *     <li>长条与蛇判定重合时，去除长条（注意长条不能完全去除，需要保留一定头部）</li>
-     *     <li>遍历该谱面文件的所有脚本请求，根据 miss/小p 的数目生成不同的按键列表</li>
-     *     <li>创建并查集，将每个按键转为2个及以上的操作，并关联每个按键的所有操作</li>
-     *     <li>将谱面中应该使用同一触控的蛇（指中途不能抬手的情形）进行关联</li>
-     *     <li>将谱面中应该使用同一触控的单点（指天键或地键）与邻近蛇头进行关联</li>
-     *     <li>将谱面中应该使用同一触控的长条尾与邻近蛇头进行关联</li>
-     *     <li>根据是否需要镜像等设定，生成不同的脚本</li>
-     * </ul>
+     * 处理一张谱面的全部 miss/小 Pure、分辨率和镜像请求。
      */
-    @Override
-    public void run() {
-        if (DEBUG_MODE && processFileList.size() > 1) {
-            System.out.println("DEBUG开启且谱面文件数目大于1！");
-            return;
+    private FileResult processFile(File affFile, Aff aff, Map<Integer, List<Request>> requestMap) {
+        List<Note> baseNoteList = aff.getNoteList();
+        List<Integer> requestKeys = new ArrayList<>(requestMap.keySet());
+        Collections.sort(requestKeys);
+        int firstKey = requestKeys.getFirst();
+        Request firstRequest = requestMap.get(firstKey).getFirst();
+        File debugRoot = new File(
+                firstRequest.targetDir(), "test/" + aff.getSongName() + "_" + aff.getDiffStr());
+        if (DEBUG_MODE) {
+            saveNotes(baseNoteList, new File(debugRoot, "base.txt"));
         }
-        for (int i = 0; i < processFileList.size(); i++) {
-            if (i % THREAD_NUM == threadNo) {
-                File affFile = processFileList.get(i);
-                Aff aff = affMap.get(affFile);
-                Map<Integer, List<Request>> map = processMap.get(affFile);
-                List<Note> baseNoteList = aff.getNoteList();
-                // 非DEBUG：dir/testify_BYD_0L0小.record
-                // DEBUG：dir/testify_BYD_test/base.txt
-                //        dir/testify_BYD_test/ArcOnHold.txt
-                //        dir/testify_BYD_test/0L0小/1_modifyMP.txt
-                //        dir/testify_BYD_test/0L0小/2_mergeArcAndArc.txt
-                //        dir/testify_BYD_test/0L0小/3_mergeClickAndArcStart.txt
-                //        dir/testify_BYD_test/0L0小/4_mergeHoldEndAndArcStart.txt
-                int x0 = map.keySet().toArray(new Integer[0])[0];
-                Request request0 = map.get(x0).getFirst();
-                File dir0 = new File(request0.targetDir(), "test/" + aff.getSongName() + "_" + aff.getDiffStr());
-                if (DEBUG_MODE) {
-                    saveNotes(baseNoteList, new File(dir0, "base.txt"));
+
+        List<Integer> modifiableClickIndexes = findModifiableClickIndexes(baseNoteList);
+        Set<File> recordFiles = new HashSet<>();
+        int processedNum = 0;
+        for (int key : requestKeys) {
+            int miss = key / (aff.getNoteCount() + 1);
+            int noShinyPure = key % (aff.getNoteCount() + 1);
+            File debugDir = new File(debugRoot, miss + "L" + noShinyPure + "小");
+            List<Note> noteList = SerializationUtils.clone((ArrayList<Note>) baseNoteList);
+            modifyMP(noteList, modifiableClickIndexes, miss, noShinyPure);
+            List<Request> requests = requestMap.get(key);
+            if (noteList.isEmpty()) {
+                boolean isLastEternity012 = affFile.getParentFile().getName().equals("dl_lasteternity")
+                        && Integer.parseInt(affFile.getName().substring(0, 1)) < 3;
+                if (!isLastEternity012) {
+                    System.out.println("未在 " + affFile.getAbsolutePath() + " 内发现Note，需确认谱面文件状态！");
                 }
-                optimizeArcOnHold(aff, baseNoteList);
+            } else {
+                ChartJudgementModel judgementModel = ChartJudgementModel.build(aff, noteList);
+                List<TouchStroke> strokes = new TouchScheduler().schedule(aff, judgementModel);
                 if (DEBUG_MODE) {
-                    saveNotes(baseNoteList, new File(dir0, "ArcOnHold.txt"));
+                    saveStrokes(strokes, new File(debugDir, "touch-strokes.txt"));
                 }
-                for (var x : map.keySet()) {
-                    int miss = x / (aff.getNoteCount() + 1);
-                    int noShinyPure = x % (aff.getNoteCount() + 1);
-                    File dir1 = new File(dir0, miss + "L" + noShinyPure + "小");
-                    List<Note> noteList = SerializationUtils.clone((ArrayList<Note>) baseNoteList);
-                    modifyMP(noteList, miss, noShinyPure);
-                    if (noteList.isEmpty()) {
-                        // last eternity 的前三个难度是无需处理的空谱面，但是其他谱面空则需要提示异常
-                        boolean isLastEternity012 = affFile.getParentFile().getName().equals("dl_lasteternity")
-                                && Integer.parseInt(affFile.getName().substring(0, 1)) < 3;
-                        if (!isLastEternity012) {
-                            System.out.println("未在 " + affFile.getAbsolutePath() + " 内发现Note，需确认谱面文件状态！");
-                        }
-                    } else {
-                        UnionFind<Action> actionUnionFind = new UnionFind<>();
-                        for (var note : noteList) {
-                            note.initActions(actionUnionFind);
-                        }
+                if (!strokes.isEmpty()) {
+                    Map<Resolution, List<SimpleAction>> actionsByResolution = new EnumMap<>(Resolution.class);
+                    Map<RecordVariant, String> jsonByVariant = new HashMap<>();
+                    TouchStrokeRenderer renderer = new TouchStrokeRenderer();
+                    for (Request request : requests) {
+                        List<SimpleAction> actions = actionsByResolution.computeIfAbsent(
+                                request.resolution(),
+                                resolution -> renderer.render(aff, strokes, resolution));
+                        RecordVariant variant = new RecordVariant(request.resolution(), request.mirror());
+                        String json = jsonByVariant.computeIfAbsent(
+                                variant,
+                                ignored -> buildRecordJson(aff, actions, miss, noShinyPure, request));
                         if (DEBUG_MODE) {
-                            saveActions(noteList, actionUnionFind, new File(dir1, "1_modifyMP.txt"));
-                            System.out.println("2");
+                            writeRecord(aff, miss, noShinyPure, request, debugDir, json);
                         }
-                        mergeArcAndArc(noteList, actionUnionFind);
-                        if (DEBUG_MODE) {
-                            saveActions(noteList, actionUnionFind, new File(dir1, "2_ArcArc.txt"));
-                            System.out.println("3");
-                        }
-                        mergeClickAndArcStart(noteList, actionUnionFind);
-                        if (DEBUG_MODE) {
-                            saveActions(noteList, actionUnionFind, new File(dir1, "3_ClickArc.txt"));
-                            System.out.println("4");
-                        }
-                        mergeHoldEndAndArcStart(noteList, actionUnionFind);
-                        if (DEBUG_MODE) {
-                            saveActions(noteList, actionUnionFind, new File(dir1, "4_HoldArc.txt"));
-                        }
-                        for (var request : map.get(x)) {
-                            if (DEBUG_MODE) {
-                                saveRecord(aff, noteList, actionUnionFind, miss, noShinyPure, request, dir1);
-                            }
-                            saveRecord(aff, noteList, actionUnionFind, miss, noShinyPure, request, null);
-                        }
-                    }
-                    synchronized (RecordThreadPool.class) {
-                        processedNum += map.get(x).size();
+                        recordFiles.add(writeRecord(
+                                aff, miss, noShinyPure, request, request.targetDir(), json));
                     }
                 }
             }
+            processedNum += requests.size();
         }
+        return new FileResult(processedNum, Set.copyOf(recordFiles));
     }
 
     private void saveNotes(List<Note> noteList, File file) {
+        List<String> lines = noteList.stream().map(Note::toString).toList();
+        try {
+            FileUtils.writeLines(file, lines);
+        } catch (IOException e) {
+            throw new IllegalStateException("无法写入调试 Note：" + file.getAbsolutePath(), e);
+        }
+    }
+
+    private void saveStrokes(List<TouchStroke> strokes, File file) {
         List<String> lines = new ArrayList<>();
-        for (var note : noteList) {
-            lines.add(note.toString());
+        for (TouchStroke stroke : strokes) {
+            lines.add(stroke.kind() + " [" + dfTime.format(stroke.startTime())
+                    + ", " + dfTime.format(stroke.endTime()) + "] "
+                    + stroke.anchors() + " sources=" + stroke.sourceIds());
         }
         try {
             FileUtils.writeLines(file, lines);
         } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private List<List<Action>> convertToActionList(List<Note> noteList, UnionFind<Action> actionUnionFind) {
-        List<List<Action>> actionsList = new ArrayList<>();
-        for (var note : noteList) {
-            // 直蛇虽然有两个操作，但是没有实际意义，仅为了连接。
-            // 所以，如果某个直蛇的getActions()长度为2，说明这个直蛇没有用
-            if (note instanceof Arc arc && arc.getNoteCount() == 0 && arc.getActions().size() == 2) {
-                continue;
-            }
-            List<Action> noteActions = note.getActions();
-            if (noteActions == null || noteActions.isEmpty()) {
-                continue;
-            }
-            boolean isRelated = false;
-            for (var x : actionsList) {
-                if (actionUnionFind.isRelated(x.get(0), noteActions.get(0))) {
-                    x.addAll(noteActions);
-                    isRelated = true;
-                    break;
-                }
-            }
-            if (!isRelated) {
-                actionsList.add(noteActions);
-            }
-        }
-        // 排序；同一触控在每个毫秒只能有一个位置，冲突操作依次向后顺延。
-        for (var relatedActions : actionsList) {
-            Collections.sort(relatedActions);
-            for (int i = 1; i < relatedActions.size(); i++) {
-                Action previousAction = relatedActions.get(i - 1);
-                Action action = relatedActions.get(i);
-                if (action.t() <= previousAction.t()) {
-                    relatedActions.set(i, new Action(action.x(), action.y(), previousAction.t() + 1));
-                }
-            }
-        }
-        actionsList.removeIf(List::isEmpty);
-        actionsList.sort(Comparator.comparingInt(list -> list.get(0).t()));
-        return actionsList;
-    }
-
-    private void saveActions(List<Note> noteList, UnionFind<Action> actionUnionFind, File file) {
-        // 原始list
-        List<List<Action>> actionLists = convertToActionList(noteList, actionUnionFind);
-        // 获取action是按下还是抬起，true按下 false抬起
-        Map<Action, Boolean> upDownMap = new HashMap<>();
-        // 获取action对应操作集合的最早时间
-        Map<Action, Integer> startTimeMap = new HashMap<>();
-        // 存储所有action
-        List<Action> actions = new ArrayList<>();
-        for (var actionList : actionLists) {
-            // 前面的都是按下，最后一个是抬起
-            for (int i = 0; i < actionList.size(); i++) {
-                upDownMap.put(actionList.get(i), i != actionList.size() - 1);
-                startTimeMap.put(actionList.get(i), actionList.getFirst().t());
-                actions.add(actionList.get(i));
-            }
-        }
-        Collections.sort(actions);
-        // 要写入文件的行
-        List<String> lines = new ArrayList<>();
-        for (var action : actions) {
-            if (upDownMap.get(action)) {
-                lines.add("[" + dfTime.format(startTimeMap.get(action)) + "] Down" + action.toString());
-            } else {
-                lines.add("[" + dfTime.format(startTimeMap.get(action)) + "] Up  " + action.toString());
-            }
-        }
-        // 写入文件
-        try {
-            FileUtils.writeLines(file, lines);
-        } catch (IOException e) {
-            e.printStackTrace();
+            throw new IllegalStateException("无法写入调试触控段落：" + file.getAbsolutePath(), e);
         }
     }
 
     /**
-     * 如果蛇在长条上方，则该长条不需要点击.
-     * <p>
-     * 如果检测到符合要求的键型，应将长条拆分为多个。
-     * <p>
-     * 显然一个 list 无法描述一个 hold 的多次抬起与按下的操作，所以需要创建新的 hold，且该处理要在连接 note 之前。
-     * <p>
-     * 假设 y<0.5 时，蛇判定可以替代长条。
-     * 前提：对于任意的Arc（代码里面的Arc对象），一定是单调的。也就是说，一个Arc只有至多一段时间满足y<0.5。
-     * 步骤如下：
-     * 1.如果蛇的开始y、结束y都大于0.5，去掉
-     * 2.对于指定的hold，遍历与其相关的arc
-     * 3.根据蛇的【所有判定点位置】，找到x在长条范围内且y<0.5的时间段（至多有一个），暂存这个时间段
-     * ps: 考虑到actionList生成的时候是使用beatTime/2作为间隔，找蛇的判定点间隔也用这个
-     * 4.把所有的暂存时间段进行合并，并进行排序
-     * eg: 蓝色在1-3s，红蛇在2-4s，则1-4s都应该去掉
-     * 5.根据排好序的时间列表，拆分hold为多个新的hold
-     * 【拆分是否要以长条判定点为基准，还是直接以拆分结果为基准？以拆分结果为基准。】
-     *
-     * @param noteList 要处理的按键列表
+     * 找出与其他普通点击在时间和判定位置上均不相邻的 Note 下标。
      */
-    private void optimizeArcOnHold(Aff aff, List<Note> noteList) {
-        List<Arc> arcs = new ArrayList<>(noteList.stream()
-                .filter(o -> o instanceof Arc).map(o -> (Arc) o)
-                .toList());
-        // 移除触控点的y总是大于y一半的蛇
-        double[] xy;
-        List<Arc> arcsToBeRemoved = new ArrayList<>();
-        for (var arc : arcs) {
-            boolean yGreaterThanMiddle = true;
-            for (float t = arc.getT1(); t < arc.getT2(); t += arc.getBeatTime() / TOUCH_SAMPLE_FREQUENCY) {
-                xy = arc.getAffPoint((int) t);
-                if (xy[1] < aff.getMiddleY((int) t)) {
-                    yGreaterThanMiddle = false;
+    private List<Integer> findModifiableClickIndexes(List<Note> noteList) {
+        List<ClickPosition> clicks = new ArrayList<>();
+        for (int i = 0; i < noteList.size(); i++) {
+            Note note = noteList.get(i);
+            if ((!(note instanceof Click) && !(note instanceof ArcTap))
+                    || note.getNoteCount() == 0) {
+                continue;
+            }
+            double[] xy = note.getAffPoint();
+            int[] screenPoint = Resolution.R16_9_1280_720.convertToXY(xy[0], xy[1], 0);
+            clicks.add(new ClickPosition(i, note.getT1(), screenPoint[0], screenPoint[1]));
+        }
+        boolean[] blocked = new boolean[clicks.size()];
+        double judgeRange = Resolution.R16_9_1280_720.getMaxX() * 0.09375;
+        double judgeRangeSquared = judgeRange * judgeRange;
+        for (int i = 0; i < clicks.size(); i++) {
+            ClickPosition first = clicks.get(i);
+            for (int j = i + 1; j < clicks.size(); j++) {
+                ClickPosition second = clicks.get(j);
+                if (second.timing() - first.timing() > EFFECT_TIME) {
                     break;
                 }
-            }
-            if (yGreaterThanMiddle) {
-                arcsToBeRemoved.add(arc);
+                long dx = first.x() - second.x();
+                long dy = first.y() - second.y();
+                if (dx * dx + dy * dy <= judgeRangeSquared) {
+                    blocked[i] = true;
+                    blocked[j] = true;
+                }
             }
         }
-        arcs.removeAll(arcsToBeRemoved);
-        List<Hold> holds = new ArrayList<>(noteList.stream()
-                .filter(o -> o instanceof Hold).map(o -> (Hold) o)
-                .toList());
-        for (var hold : holds) {
-            arcs.removeIf(arc -> arc.getT2() <= hold.getT1());
-            // 找到所有时间可能符合要求的Arc
-            List<Arc> candidateArcs = arcs.stream().filter(arc -> hold.getT2() > arc.getT1()).toList();
-            if (candidateArcs.isEmpty()) {
-                continue;
+        List<Integer> result = new ArrayList<>();
+        for (int i = 0; i < clicks.size(); i++) {
+            if (!blocked[i]) {
+                result.add(clicks.get(i).noteIndex());
             }
-            // 长条判定区
-            double minX = hold.getTrack() * 0.5 - 1;
-            double maxX = hold.getTrack() * 0.5 - 0.5;
-            // 对于所有对该长条有影响的蛇，保存有影响的时间段；保存时，如果差距在50ms内，则合并两个时间段
-            Map<Integer, Integer> timeMap = new HashMap<>();
-            for (var arc : candidateArcs) {
-                // 一个蛇至多有一段时间与长条有影响
-                int startTime = -1;
-                int endTime = -1;
-                for (float t = arc.getT1(); t < arc.getT2(); t += arc.getBeatTime() / TOUCH_SAMPLE_FREQUENCY) {
-                    xy = arc.getAffPoint((int) t);
-                    if (xy[0] > minX && xy[0] < maxX && xy[1] < aff.getMiddleY((int) t)) {
-                        if (startTime == -1) {
-                            startTime = (int) t;
-                        }
-                        endTime = (int) t;
-                    } else if (startTime != -1) {
-                        endTime = (int) t;
-                        break;
-                    }
-                    if (t + arc.getBeatTime() / TOUCH_SAMPLE_FREQUENCY >= arc.getT2()) {
-                        xy = arc.getAffPoint(arc.getT2());
-                        if (xy[0] > minX && xy[0] < maxX && xy[1] < aff.getMiddleY(arc.getT2())) {
-                            if (startTime == -1) {
-                                startTime = arc.getT2();
-                            }
-                            endTime = arc.getT2();
-                        } else if (startTime != -1) {
-                            endTime = arc.getT2();
-                            break;
-                        }
-                    }
-                }
-                if (startTime >= endTime) {
-                    continue;
-                }
-                // 找到这段时间后，将其添加至 timeMap
-                // canMerge 为 true，表示这个新的时间段应该与现有的合并；false 表示该时间段是独立的
-                boolean canMerge = false;
-                for (var x : timeMap.entrySet()) {
-                    if (x.getKey() < endTime + 50 && x.getValue() > startTime - 50) {
-                        canMerge = true;
-                        break;
-                    }
-                }
-                if (!canMerge) {
-                    timeMap.put(startTime, endTime);
-                } else {
-                    while (true) {
-                        boolean flag = false;
-                        for (var x : timeMap.entrySet()) {
-                            if (startTime == x.getKey() && endTime == x.getValue()) {
-                                continue;
-                            }
-                            if (x.getKey() < endTime + 50 && x.getValue() > startTime - 50) {
-                                startTime = Math.min(x.getKey(), startTime);
-                                endTime = Math.max(x.getValue(), endTime);
-                                timeMap.remove(x.getKey());
-                                flag = true;
-                                break;
-                            }
-                        }
-                        if (!flag) {
-                            break;
-                        }
-                    }
-                    timeMap.put(startTime, endTime);
-                }
-            }
-            if (timeMap.isEmpty()) {
-                continue;
-            }
-            // 如果时间段超出note范围，将其缩小到note时间范围
-            List<Integer> startTimeList = new ArrayList<>(timeMap.keySet().stream().toList());
-            Collections.sort(startTimeList);
-            for (var x : startTimeList) {
-                int key = Math.max(hold.getT1(), x);
-                int value = Math.min(hold.getT2(), timeMap.get(x));
-                timeMap.remove(x);
-                if (key != value) {
-                    timeMap.put(key, value);
-                }
-            }
-            if (timeMap.isEmpty()) {
-                continue;
-            }
-            // 根据timeMap的时间段，将hold处理为多个新的hold
-            startTimeList = new ArrayList<>(timeMap.keySet().stream().toList());
-            Collections.sort(startTimeList);
-            List<Hold> newHolds = new ArrayList<>();
-            int firstStartTime = startTimeList.get(0);
-            Hold newHoldStart = SerializationUtils.clone(hold);
-            newHoldStart.setT2(Math.max(hold.getT1() + CLICK_TIME, firstStartTime));
-            newHolds.add(newHoldStart);
-            for (int i = 0; i < startTimeList.size() - 1; i++) {
-                Hold newHoldMiddle = SerializationUtils.clone(hold);
-                newHoldMiddle.setT1(timeMap.get(startTimeList.get(i)));
-                newHoldMiddle.setT2(startTimeList.get(i + 1));
-                newHolds.add(newHoldMiddle);
-            }
-            int lastEndTime = timeMap.get(startTimeList.get(startTimeList.size() - 1));
-            if (hold.getT2() - lastEndTime > 50) {
-                Hold newHoldEnd = SerializationUtils.clone(hold);
-                newHoldEnd.setT1(lastEndTime);
-                newHolds.add(newHoldEnd);
-            }
-            noteList.remove(hold);
-            noteList.addAll(newHolds);
         }
-        Collections.sort(noteList);
+        return List.copyOf(result);
     }
 
     /**
-     * 按照指定的 miss、小p 处理传入的按键列表.
-     *
-     * @param noteList    被处理的按键列表
-     * @param miss        目标 miss 数
-     * @param noShinyPure 目标 小p 数
+     * 按照指定 miss、小 Pure 数修改普通点击。
      */
-    private void modifyMP(List<Note> noteList, final int miss, int noShinyPure) {
-        // 获取 noteList 中所有的地键和天键，只有单点会被修改
-        List<Note> clicks = noteList.stream().filter(o -> o instanceof Click || o instanceof ArcTap).toList();
-        // 可转为 miss/小p 的条件：其余所有按键都与该键在时间、位置上有一定距离
-        // 如果纵连中间移除掉一个，可能导致后面的键判定于被移除的键，所以有这样的要求
-        // 下面这个存储所有可以修改的click
-        List<Note> canModifyClicks = new ArrayList<>();
-        // 遍历，寻找所有可以修改的click
-        for (Note c1 : clicks) {
-            boolean canBeModified = true;
-            for (Note c2 : clicks) {
-                if (c1 == c2) {
-                    continue;
-                }
-                if (Math.abs(c1.getT1() - c2.getT1()) <= EFFECT_TIME) {
-                    // 如果时间接近，需要判断距离是否接近（模拟器上的距离小于模拟器宽的 0.09375）
-                    double[] xy1 = c1.getAffPoint();
-                    double[] xy2 = c2.getAffPoint();
-                    int[] XY1 = Resolution.R16_9_1280_720.convertToXY(xy1[0], xy1[1], 0);
-                    int[] XY2 = Resolution.R16_9_1280_720.convertToXY(xy2[0], xy2[1], 0);
-                    double dis = Math.sqrt(Math.pow(XY1[0] - XY2[0], 2) + Math.pow(XY1[1] - XY2[1], 2));
-                    double judgeRange = Resolution.R16_9_1280_720.getMaxX() * 0.09375;
-                    if (dis <= judgeRange) {
-                        // 时间、距离都接近，则该键不能被修改
-                        canBeModified = false;
-                        break;
-                    }
-                }
-            }
-            if (canBeModified) {
-                canModifyClicks.add(c1);
-            }
+    private void modifyMP(List<Note> noteList, List<Integer> modifiableClickIndexes,
+                          final int miss, int noShinyPure) {
+        List<Note> canModifyClicks = new ArrayList<>(modifiableClickIndexes.size());
+        for (int index : modifiableClickIndexes) {
+            canModifyClicks.add(noteList.get(index));
         }
         if (canModifyClicks.isEmpty()) {
             return;
         }
-        // 暂存将会转为 miss 的 note
         List<Note> missClicks = new ArrayList<>();
-        // 暂存将会转为 小p 的 note
         List<Note> noShinyPureClicks = new ArrayList<>();
-        // 由于偏移也不一定小p（模拟器原因，执行时间有偏差），这里适当增加小p数
         noShinyPure *= 1.2;
         int startTime = canModifyClicks.getFirst().getT1();
         int endTime = canModifyClicks.getLast().getT1();
         int fullTimeSpan = endTime - startTime;
-        // 本次循环的目标 miss 数
         int targetMissNum = miss;
-        // 循环，直至均分时的 miss 数达标
         while (true) {
             missClicks.clear();
             noShinyPureClicks.clear();
             double noteTimeSpan = fullTimeSpan * 1.0 / Math.max(1, targetMissNum);
-            // 循环，直至所有 note 都已分配至 miss
-            for (Note c1 : canModifyClicks) {
-                // 计算出此时应该至少有多少 miss 的 note
-                int currNeedMissNum = (int) ((c1.getT1() - startTime) / noteTimeSpan) + 1;
-                if (missClicks.size() < currNeedMissNum && missClicks.size() < miss) {
-                    missClicks.add(c1);
+            for (Note click : canModifyClicks) {
+                int needMissNum = (int) ((click.getT1() - startTime) / noteTimeSpan) + 1;
+                if (missClicks.size() < needMissNum && missClicks.size() < miss) {
+                    missClicks.add(click);
                 } else if (noShinyPureClicks.size() < noShinyPure) {
-                    noShinyPureClicks.add(c1);
+                    noShinyPureClicks.add(click);
                 }
                 if (missClicks.size() == miss && noShinyPureClicks.size() == noShinyPure) {
                     break;
@@ -561,12 +329,9 @@ public class RecordThreadPool implements Runnable {
             }
             targetMissNum++;
         }
-        // 处理 miss
         noteList.removeAll(missClicks);
-        // 处理 小p
-        // 指示下一个变为 小p 的按键应该变为 early 还是 late
         boolean nextToEarly = true;
-        for (var note : noShinyPureClicks) {
+        for (Note note : noShinyPureClicks) {
             note.setT1(nextToEarly ? note.getT1() - 30 : note.getT1() + 30);
             note.setT2(note.getT1() + CLICK_TIME);
             nextToEarly = !nextToEarly;
@@ -575,288 +340,77 @@ public class RecordThreadPool implements Runnable {
     }
 
     /**
-     * 将同色蛇合并为单一触控操作.
-     * <p>
-     * 同一颜色在连续时间区间内只使用一个触控点。普通首尾连接沿用既有合并规则；
-     * 多条蛇时间重叠时保留全部采样操作，使同一触控点按时间顺序在各条蛇之间移动。
-     * 时间间隔达到50ms时开始新的触控区间。
-     *
-     * @param noteList 要处理的按键列表
+     * 为一种分辨率和镜像组合构建完整 record JSON。
      */
-    private void mergeArcAndArc(List<Note> noteList, UnionFind<Action> actionUnionFind) {
-        Map<Integer, List<Arc>> arcsMap = new HashMap<>();
-        noteList.stream()
-                .filter(o -> o instanceof Arc).map(o -> (Arc) o)
-                .forEachOrdered(arc -> {
-                    if (arcsMap.containsKey(arc.getColor())) {
-                        arcsMap.get(arc.getColor()).add(arc);
-                    } else {
-                        List<Arc> list = new ArrayList<>();
-                        list.add(arc);
-                        arcsMap.put(arc.getColor(), list);
-                    }
-                });
-        arcStarts = new ArrayList<>();
-        for (List<Arc> arcs : arcsMap.values()) {
-            Arc componentStart = null;
-            Arc componentEnd = null;
-            boolean hasTimedArc = false;
-            for (Arc arc : arcs) {
-                if (componentEnd == null || arc.getT1() - componentEnd.getT2() >= 50) {
-                    componentStart = arc;
-                    componentEnd = arc;
-                    hasTimedArc = arc.getT1() != arc.getT2();
-                    if (hasTimedArc) {
-                        arcStarts.add(componentStart);
-                    }
-                    continue;
-                }
-                // 普通蛇后的直蛇不延长触控区间；以直蛇开头时仍可连接后续普通蛇。
-                if (arc.getT1() == arc.getT2()) {
-                    continue;
-                }
-                boolean extendsComponent = arc.getT2() >= componentEnd.getT2();
-                if (extendsComponent && Math.abs(componentEnd.getT2() - arc.getT1()) < 50) {
-                    Note.mergeNotes(componentEnd, arc, actionUnionFind);
-                } else {
-                    actionUnionFind.merge(componentStart.getFirstAction(), arc.getFirstAction());
-                }
-                if (!hasTimedArc) {
-                    arcStarts.add(componentStart);
-                    hasTimedArc = true;
-                }
-                if (extendsComponent) {
-                    componentEnd = arc;
-                }
-                if (DEBUG_MODE) {
-                    System.out.println(componentStart + " + " + arc);
-                }
-            }
-        }
-        Collections.sort(arcStarts);
-       /* for (var arc : arcStarts) {
-            System.out.println(arc.getColor() + " " + arc.getT1() + "-" + arc.getT2());
-        }*/
-    }
-
-    /**
-     * 连接天键与蛇头、地键与蛇头.
-     * <p>
-     * 如果要连接某个天键与蛇头，那么蛇的 hasHead 必须为 false；
-     * 但天键与蛇较近且的 hasHead 必须为 false，并不能说明二者一定要连接。
-     * <p>
-     * 有可能出现一个键对应多个蛇的情况，merge 操作必须要注意。
-     * eg.天键a后面跟了红蛇和蓝蛇，假如先merge了天键和红蛇，这个天键就不能merge蓝蛇，否则红蓝蛇将使用同一个触控点。
-     * <p>
-     * 还有可能出现天键在蛇头之后。该情况由 Note.mergeNotes() 处理对应 action。
-     * <p>
-     * hasHead = false，如果这个是个碎蛇咋办？蛇+蛇 与 单点+蛇头，这两个哪个先执行？逻辑需要如何调整？
-     * eg. — — |— — 操作是什么样的？
-     * 第一种：蛇按住，单点点一下松开
-     * 第二种：蛇在第二个结尾松开，单点再点下去
-     * 第三种：一个触控点一直按蛇不松，后一个触控点点击天键后，后续与蛇一致
-     * yyq：采用第一种。游戏机制：在按住蛇的情况下，无论怎么点周围都不会断蛇。
-     * 使用第一种操作方式情况下，应该先关联 蛇+蛇，再关联 单点+蛇头。
-     * <p>
-     * 特别声明：该方法作者yyq，有问题找他！
-     *
-     * @param noteList 要处理的按键列表
-     */
-    private void mergeClickAndArcStart(List<Note> noteList, UnionFind<Action> actionUnionFind) {
-        // 天键与地键判定机区域不同
-        List<Note> clicks = new ArrayList<>(noteList);
-        clicks.removeIf(o -> !(o instanceof Click) && !(o instanceof ArcTap));
-        List<Arc> arcsToBeRemoved = new ArrayList<>();
-        for (var arc : arcStarts) {
-            clicks.removeIf(o -> o.getT1() < arc.getT1() - CLICK_TIME);
-            // 找到所有时间符合要求的单点
-            List<Note> candidateClicks = new ArrayList<>(clicks.stream()
-                    .filter(o -> o.getT1() <= arc.getT1() + CLICK_TIME).toList());
-            if (candidateClicks.isEmpty()) {
-                continue;
-            }
-            // 按照距离最近排序
-            candidateClicks.sort((o1, o2) -> {
-                double[] xy1 = o1.getAffPoint();
-                double dis1 = Math.sqrt(Math.pow(xy1[0] - arc.getX1(), 2) + Math.pow(xy1[1] - arc.getY1(), 2));
-                double[] xy2 = o2.getAffPoint();
-                double dis2 = Math.sqrt(Math.pow(xy2[0] - arc.getX1(), 2) + Math.pow(xy2[1] - arc.getY1(), 2));
-                return Double.compare(dis1, dis2);
-            });
-            Note bestChoice = candidateClicks.getFirst();
-            double[] xy = bestChoice.getAffPoint();
-            double minDis = Math.sqrt(Math.pow(xy[0] - arc.getX1(), 2) + Math.pow(xy[1] - arc.getY1(), 2));
-            // todo: 改为用模拟器宽，区分天键和地键
-            if (minDis > 0.3/*Resolution.R16_9_1280_720.getMaxX() * 0.09375*/) {
-                continue;
-            }
-            Note.mergeNotes(bestChoice, arc, actionUnionFind);
-            if (DEBUG_MODE) {
-                System.out.println(bestChoice + " + " + arc);
-            }
-            clicks.remove(bestChoice);
-            arcsToBeRemoved.add(arc);
-        }
-        arcStarts.removeAll(arcsToBeRemoved);
-    }
-
-    /**
-     * 连接长条尾与蛇头.
-     * <p>
-     * 时间（100ms内）、距离在一定范围内，直接merge就行。
-     * <p>
-     * 蛇与长条重合的修改在此方法之前，所以此时不会出现长条跟蛇有重合的情况。
-     *
-     * @param noteList 要处理的按键列表
-     */
-    private void mergeHoldEndAndArcStart(List<Note> noteList, UnionFind<Action> actionUnionFind) {
-        List<Hold> holds = new ArrayList<>(noteList.stream()
-                .filter(o -> o instanceof Hold).map(o -> (Hold) o)
-                .toList());
-        List<Arc> arcsToBeRemoved = new ArrayList<>();
-        for (var arc : arcStarts) {
-            holds.removeIf(hold -> hold.getT2() < arc.getT1() - CLICK_TIME);
-            // 找到所有时间符合要求的长条
-            List<Hold> candidateHolds = new ArrayList<>(holds.stream()
-                    .filter(hold -> hold.getT2() <= arc.getT1() + CLICK_TIME).toList());
-            if (candidateHolds.isEmpty()) {
-                continue;
-            }
-            // 按照距离最近排序
-            candidateHolds.sort((o1, o2) -> {
-                double[] xy1 = o1.getAffPoint();
-                double dis1 = Math.sqrt(Math.pow(xy1[0] - arc.getX1(), 2) + Math.pow(xy1[1] - arc.getY1(), 2));
-                double[] xy2 = o2.getAffPoint();
-                double dis2 = Math.sqrt(Math.pow(xy2[0] - arc.getX1(), 2) + Math.pow(xy2[1] - arc.getY1(), 2));
-                return Double.compare(dis1, dis2);
-            });
-            Hold bestChoice = candidateHolds.getFirst();
-            double[] xy = bestChoice.getAffPoint();
-            double minDis = Math.sqrt(Math.pow(xy[0] - arc.getX1(), 2) + Math.pow(xy[1] - arc.getY1(), 2));
-            // todo: 改为用模拟器宽
-            if (minDis > 0.3/*Resolution.R16_9_1280_720.getMaxX() * 0.09375*/) {
-                continue;
-            }
-            Note.mergeNotes(bestChoice, arc, actionUnionFind);
-            if (DEBUG_MODE) {
-                System.out.println(bestChoice + " + " + arc);
-            }
-            holds.remove(bestChoice);
-            arcsToBeRemoved.add(arc);
-        }
-        arcStarts.removeAll(arcsToBeRemoved);
-    }
-
-    /**
-     * 根据需求生成脚本.
-     *
-     * @param aff             要生成脚本的谱面文件
-     * @param noteList        处理后的最终按键列表
-     * @param actionUnionFind 操作并查集，记录action的关联
-     * @param miss            miss个数
-     * @param noShinyPure     小p个数
-     * @param request         脚本生成需求
-     * @param debugDir        为null表示使用request的路径，否则使用该路径
-     */
-    private void saveRecord(Aff aff, List<Note> noteList, UnionFind<Action> actionUnionFind,
-                            int miss, int noShinyPure, Request request, File debugDir) {
-        // 构建谱面操作列表，有关联的操作会放在同一个 list 中
-        List<List<Action>> actionsList = convertToActionList(noteList, actionUnionFind);
-        // 构建实际操作列表
-        TouchIdManager idManager = new TouchIdManager();
-        List<SimpleAction> simpleActions = new ArrayList<>();
-        for (var relatedActions : actionsList) {
-            // 如果最后两个 action 的时间差低于 25ms，可能是超短蛇/超短长条，此时需要延长抬手的时间
-            if (relatedActions.size() < 2) {
-                throw new IllegalStateException("操作数目小于2！谱面路径： " + aff.getAffFile().getPath());
-            }
-            Action endActionPre = relatedActions.get(relatedActions.size() - 2);
-            Action endAction = relatedActions.getLast();
-            if (endAction.t() - endActionPre.t() < 25) {
-                endAction = new Action(endAction.x(), endAction.y(), endAction.t() + 25);
-                relatedActions.add(endAction);
-            }
-            int beginTime = relatedActions.getFirst().t();
-            int endTime = endAction.t();
-            int id = idManager.getId(beginTime, endTime);
-            for (var action : relatedActions) {
-                int[] XY = request.resolution().convertToXY(action.x(), action.y(), aff.getRatio46k(action.t()));
-                simpleActions.add(new SimpleAction(action.t() + FIRST_NOTE_TIME + CLICK_TIME, id, XY[0], XY[1], action != endAction));
-            }
-        }
-        // 排序
-        Collections.sort(simpleActions);
-        // 根据要求生成脚本
+    private String buildRecordJson(Aff aff, List<SimpleAction> simpleActions,
+                                   int miss, int noShinyPure, Request request) {
         JSONArray operationsArray = new JSONArray();
-        // 写入暂停、继续操作
         List<SimpleAction> preSimpleActions = request.resolution().getPreSimpleActions();
-        for (int i = 0; i < preSimpleActions.size(); i++) {
-            int timing = preSimpleActions.get(i).timing();
-            JSONArray points = new JSONArray();
-            for (int j = i; j < preSimpleActions.size(); j++) {
-                SimpleAction o1 = preSimpleActions.get(j);
-                if (o1.timing() == timing) {
-                    add(points, o1, false, request.resolution());
-                    i++;
-                } else {
-                    break;
-                }
-            }
-            i--;
-            JSONObject obj = new JSONObject();
-            obj.put("timing", timing);
-            obj.put("operationId", "PutMultiTouch");
-            obj.put("points", points);
-            operationsArray.add(obj);
-        }
-        // 写入已经处理好的脚本操作
-        for (int i = 0; i < simpleActions.size(); i++) {
-            int timing = simpleActions.get(i).timing();
-            JSONArray points = new JSONArray();
-            for (int j = i; j < simpleActions.size(); j++) {
-                SimpleAction o1 = simpleActions.get(j);
-                if (o1.timing() == timing) {
-                    add(points, o1, request.mirror(), request.resolution());
-                    i++;
-                } else {
-                    break;
-                }
-            }
-            i--;
-            JSONObject obj = new JSONObject();
-            obj.put("timing", timing);
-            obj.put("operationId", "PutMultiTouch");
-            obj.put("points", points);
-            operationsArray.add(obj);
-        }
+        appendOperations(operationsArray, preSimpleActions, false, request.resolution());
+        appendOperations(operationsArray, simpleActions, request.mirror(), request.resolution());
+
         JSONObject recordInfo = new JSONObject();
         recordInfo.put("loopType", 0);
         recordInfo.put("loopTimes", 1);
-        // 获取按键最大时间
-        int circleDuration = simpleActions.get(simpleActions.size() - 1).timing() + 500;
-        recordInfo.put("circleDuration", circleDuration);
+        recordInfo.put("circleDuration", simpleActions.getLast().timing() + 500);
         recordInfo.put("loopInterval", 0);
         recordInfo.put("loopDuration", 0);
         recordInfo.put("accelerateTimes", 1);
         recordInfo.put("recordName", "");
-        String s = aff.getDiffStr() +
-                (request.mirror() ? "_镜像_" : "_原版_") +
-                miss + "L" + noShinyPure + "小";
-        recordInfo.put("createTime", s);
+        recordInfo.put("createTime", getRecordDescription(aff, miss, noShinyPure, request));
         recordInfo.put("playOnBoot", false);
         recordInfo.put("rebootTiming", 0);
-        JSONObject obj = new JSONObject();
-        obj.put("operations", operationsArray);
-        obj.put("recordInfo", recordInfo);
-        // 格式化字符串，并保存至文件
-        String formatStr = obj.toString(JSONWriter.Feature.PrettyFormat);
-        File targetDir = debugDir != null ? debugDir : request.targetDir();
-        File recordFile = new File(targetDir, aff.getSongName() + "_" + s + ".record");
-        try {
-            FileUtils.write(recordFile, formatStr, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            e.printStackTrace();
+        JSONObject record = new JSONObject();
+        record.put("operations", operationsArray);
+        record.put("recordInfo", recordInfo);
+        return record.toString(JSONWriter.Feature.PrettyFormat);
+    }
+
+    private void appendOperations(JSONArray operationsArray, List<SimpleAction> actions,
+                                  boolean mirror, Resolution resolution) {
+        for (int i = 0; i < actions.size(); i++) {
+            int timing = actions.get(i).timing();
+            JSONArray points = new JSONArray();
+            int j = i;
+            while (j < actions.size() && actions.get(j).timing() == timing) {
+                add(points, actions.get(j), mirror, resolution);
+                j++;
+            }
+            JSONObject operation = new JSONObject();
+            operation.put("timing", timing);
+            operation.put("operationId", "PutMultiTouch");
+            operation.put("points", points);
+            operationsArray.add(operation);
+            i = j - 1;
         }
+    }
+
+    private String getRecordDescription(Aff aff, int miss, int noShinyPure, Request request) {
+        return aff.getDiffStr()
+                + (request.mirror() ? "_镜像_" : "_原版_")
+                + miss + "L" + noShinyPure + "小";
+    }
+
+    private File writeRecord(Aff aff, int miss, int noShinyPure, Request request,
+                             File targetDir, String json) {
+        String description = getRecordDescription(aff, miss, noShinyPure, request);
+        try {
+            File recordFile = new File(targetDir,
+                    aff.getSongName() + "_" + description + ".record").getCanonicalFile();
+            FileUtils.write(recordFile, json, StandardCharsets.UTF_8);
+            return recordFile;
+        } catch (IOException e) {
+            throw new IllegalStateException("无法写入脚本：" + targetDir.getAbsolutePath(), e);
+        }
+    }
+
+    private record ClickPosition(int noteIndex, int timing, int x, int y) {
+    }
+
+    private record RecordVariant(Resolution resolution, boolean mirror) {
+    }
+
+    private record FileResult(int processedNum, Set<File> recordFiles) {
     }
 
     private static class ConvertThreadFactory implements ThreadFactory {
@@ -870,17 +424,16 @@ public class RecordThreadPool implements Runnable {
         }
 
         @Override
-        public Thread newThread(Runnable r) {
-            Thread t = new Thread(group, r, namePrefix + threadNumber.getAndIncrement(), 0);
-            // 设置为非后台进程
-            if (t.isDaemon()) {
-                t.setDaemon(false);
+        public Thread newThread(Runnable runnable) {
+            Thread thread = new Thread(
+                    group, runnable, namePrefix + threadNumber.getAndIncrement(), 0);
+            if (thread.isDaemon()) {
+                thread.setDaemon(false);
             }
-            // 设置为普通优先级
-            if (t.getPriority() != Thread.NORM_PRIORITY) {
-                t.setPriority(Thread.NORM_PRIORITY);
+            if (thread.getPriority() != Thread.NORM_PRIORITY) {
+                thread.setPriority(Thread.NORM_PRIORITY);
             }
-            return t;
+            return thread;
         }
     }
 }

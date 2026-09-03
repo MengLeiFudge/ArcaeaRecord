@@ -13,8 +13,16 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
@@ -37,6 +45,15 @@ import static arc.record.Settings.*;
 public class AffToRecord {
     private static final Pattern P_AFF = Pattern.compile("[0-4]\\.aff");
     private static final Pattern P_APK = Pattern.compile("[0-9]+\\.[0-9]+\\.[0-9]+c");
+    /**
+     * 全自动流程拥有的脚本目录；清理只作用于这些目录顶层的旧 record。
+     */
+    private static final List<String> AUTO_MANAGED_DIR_NAMES = List.of(
+            "0L3%", "1L3%", "996w4%", "991w4%", "986w5%", "981w5%", "全难度理论值", "低难度理论值");
+    /**
+     * NVMe 盘上同时压缩的 archive 上限；实际线程数还受 CPU 数量和目录数量限制。
+     */
+    private static final int MAX_ZIP_THREADS = 4;
     private final boolean[] targetDifficulty = new boolean[5];
     /**
      * 要压缩的文件夹.
@@ -71,17 +88,11 @@ public class AffToRecord {
      * @param srcFileOrDir 要压缩的文件
      * @param zipFile      压缩文件存放地方
      */
-    private static void zip(File srcFileOrDir, File zipFile) {
-        try {
-            srcFileOrDir = srcFileOrDir.getCanonicalFile();
-            zipFile = zipFile.getCanonicalFile();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    private static void zip(File srcFileOrDir, File zipFile) throws IOException {
+        srcFileOrDir = srcFileOrDir.getCanonicalFile();
+        zipFile = zipFile.getCanonicalFile();
         try (ZipOutputStream outputStream = new ZipOutputStream(new FileOutputStream(zipFile))) {
             zipFile(outputStream, srcFileOrDir, "");
-        } catch (IOException e) {
-            e.printStackTrace();
         }
     }
 
@@ -94,8 +105,13 @@ public class AffToRecord {
         if (srcFileOrDir.isDirectory()) {
             basePath = basePath + (basePath.isEmpty() ? "" : "/") + srcFileOrDir.getName();
             //System.out.println("zip中的文件夹路径：" + basePath);
-            for (File f : Objects.requireNonNull(srcFileOrDir.listFiles())) {
-                zipFile(zos, f, basePath);
+            File[] files = srcFileOrDir.listFiles();
+            if (files == null) {
+                throw new IOException("无法读取待打包目录：" + srcFileOrDir.getAbsolutePath());
+            }
+            Arrays.sort(files, Comparator.comparing(File::getName).thenComparing(File::getAbsolutePath));
+            for (File file : files) {
+                zipFile(zos, file, basePath);
             }
         } else {
             basePath = (basePath.isEmpty() ? "" : basePath + "/") + srcFileOrDir.getName();
@@ -108,6 +124,7 @@ public class AffToRecord {
                     zos.write(buffer, 0, readLen);
                 }
             }
+            zos.closeEntry();
         }
     }
 
@@ -138,8 +155,9 @@ public class AffToRecord {
             }
         }
         System.out.println("查找完毕，" + processMap.size() + " 个谱面文件共计生成 " + targetNum + " 个脚本请求");
-        RecordThreadPool.process(affMap, processMap);
+        Set<File> successfulFiles = RecordThreadPool.process(affMap, processMap);
         if ("".equals(s)) {
+            cleanObsoleteAutoRecords(successfulFiles);
             System.out.println("开始将脚本打包至 zip...");
             autoZip();
             System.out.println("已将所有脚本打包至 zip！");
@@ -510,6 +528,44 @@ public class AffToRecord {
         }
     }
 
+    /**
+     * 删除全自动受管目录顶层中未由本轮成功写出的旧 record。
+     *
+     * @param successfulFiles 本轮已成功写出的规范文件
+     */
+    private void cleanObsoleteAutoRecords(Set<File> successfulFiles) {
+        Set<Path> successfulPaths = new HashSet<>();
+        try {
+            for (File successfulFile : successfulFiles) {
+                successfulPaths.add(successfulFile.getCanonicalFile().toPath());
+            }
+            for (String directoryName : AUTO_MANAGED_DIR_NAMES) {
+                File directory = new File(VMS_DIR, "脚本/" + directoryName).getCanonicalFile();
+                if (!directory.exists()) {
+                    continue;
+                }
+                if (!directory.isDirectory()) {
+                    throw new IOException("受管脚本路径不是目录：" + directory.getAbsolutePath());
+                }
+                File[] records = directory.listFiles(file -> file.isFile() && file.getName().endsWith(".record"));
+                if (records == null) {
+                    throw new IOException("无法读取受管脚本目录：" + directory.getAbsolutePath());
+                }
+                for (File record : records) {
+                    if (!successfulPaths.contains(record.getCanonicalFile().toPath())) {
+                        try {
+                            Files.delete(record.toPath());
+                        } catch (IOException e) {
+                            throw new IOException("无法删除旧脚本：" + record.getAbsolutePath(), e);
+                        }
+                    }
+                }
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("清理全自动模式旧脚本失败", e);
+        }
+    }
+
     private void autoZip() {
         String version = null;
         File apk = getApk();
@@ -524,12 +580,94 @@ public class AffToRecord {
             version = new SimpleDateFormat("yyyyMMdd").format(new Date());
         }
         File zipDir = new File(VMS_DIR, "脚本打包");
-        zipDir.mkdirs();
+        try {
+            Files.createDirectories(zipDir.toPath());
+        } catch (IOException e) {
+            throw new IllegalStateException("无法创建脚本打包目录：" + zipDir.getAbsolutePath(), e);
+        }
+
+        int threadCount = Math.min(MAX_ZIP_THREADS,
+                Math.min(Runtime.getRuntime().availableProcessors(), zipDirList.size()));
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        List<ZipTask> tasks = new ArrayList<>(zipDirList.size());
+        List<Future<Void>> futures = new ArrayList<>(zipDirList.size());
         for (File dir : zipDirList) {
             File targetZip = new File(zipDir, dir.getName() + "_" + version + ".zip");
+            ZipTask task = new ZipTask(dir, targetZip);
+            tasks.add(task);
             System.out.println("开始打包：" + dir + " -> " + targetZip);
-            zip(dir, targetZip);
-            System.out.println("打包完毕：" + dir + " -> " + targetZip);
+            futures.add(executor.submit(() -> {
+                publishZip(task.source(), task.target());
+                return null;
+            }));
         }
+        executor.shutdown();
+
+        IllegalStateException failure = null;
+        for (int i = 0; i < futures.size(); i++) {
+            ZipTask task = tasks.get(i);
+            try {
+                futures.get(i).get();
+                System.out.println("打包完毕：" + task.source() + " -> " + task.target());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                for (Future<Void> future : futures) {
+                    future.cancel(true);
+                }
+                executor.shutdownNow();
+                throw new IllegalStateException("等待脚本打包任务时被中断", e);
+            } catch (ExecutionException e) {
+                IllegalStateException taskFailure = new IllegalStateException(
+                        "打包失败：" + task.source() + " -> " + task.target(), e.getCause());
+                if (failure == null) {
+                    failure = taskFailure;
+                } else {
+                    failure.addSuppressed(taskFailure);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
+    /**
+     * 将一个目录写入临时 zip，完整关闭后再替换正式文件。
+     */
+    private static void publishZip(File source, File target) throws IOException {
+        Path targetPath = target.toPath();
+        Path temporary = Files.createTempFile(targetPath.getParent(), target.getName() + ".", ".tmp");
+        IOException failure = null;
+        boolean published = false;
+        try {
+            zip(source, temporary.toFile());
+            try {
+                Files.move(temporary, targetPath, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(temporary, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            }
+            published = true;
+        } catch (IOException e) {
+            failure = e;
+            throw e;
+        } finally {
+            if (!published) {
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException cleanupFailure) {
+                    if (failure != null) {
+                        failure.addSuppressed(cleanupFailure);
+                    } else {
+                        throw cleanupFailure;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 一个互不共享输出流的 archive 打包任务。
+     */
+    private record ZipTask(File source, File target) {
     }
 }

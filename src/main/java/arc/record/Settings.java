@@ -69,14 +69,17 @@ public class Settings {
      */
     public static final int FIRST_NOTE_TIME = 8295;
     /**
-     * 触控采样频率.
+     * 连续触控移动坐标之间的目标屏幕距离，占目标分辨率高度的比例。
      * <p>
-     * 雷电模拟器只有按下和抬起操作，所以长条、蛇转为操作时，需要根据判定间隔计算坐标。
-     * <p>
-     * 该值表示每个判定间隔计算几次坐标。该值越大，移动操作就越精确，脚本大小也更大。
-     * <p>
-     * 该值必须大于等于1。
+     * 只有累计移动达到该距离时才增加可选移动操作；判定要求的目标位置始终保留。
      */
+    public static final double TOUCH_MOVE_DISTANCE_RATIO = 0.01;
+    /**
+     * 旧 Action 路径的固定采样频率，仅为保留未删除的兼容代码。
+     * <p>
+     * 生产转换主路径不再使用该值。
+     */
+    @Deprecated
     public static final float TOUCH_SAMPLE_FREQUENCY = 8;
     /**
      * 指示是否为调试模式.

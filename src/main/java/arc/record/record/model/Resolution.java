@@ -146,4 +146,13 @@ public enum Resolution {
     public int getMaxX() {
         return width * 15;
     }
+
+    /**
+     * 返回模拟器脚本坐标系的最大 Y 值。
+     *
+     * @return 分辨率高度的 15 倍
+     */
+    public int getMaxY() {
+        return height * 15;
+    }
 }

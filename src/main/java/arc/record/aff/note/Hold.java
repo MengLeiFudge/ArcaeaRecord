@@ -1,5 +1,6 @@
 package arc.record.aff.note;
 
+import arc.record.aff.judge.LongNoteJudgement;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -25,21 +26,13 @@ public class Hold extends Note {
     }
 
     /**
-     * 返回 note 总数.
-     * <p>
-     * 计算规则如下：
-     * <ul>
-     *     <li>按 beatTime 分割为多个判定块，最后一个判定块长度为[1判定块,2判定块)</li>
-     *     <li>除第一个判定块外，其余判定块头+1combo</li>
-     *     <li>至少有1combo</li>
-     * </ul>
+     * 返回由统一长键公式得到的物量。
      *
-     * @return 该长条的 note 总数
+     * @return 名义判定点数量
      */
     @Override
     public int getNoteCount() {
-        int beatCount = (int) ((t2 - t1) / beatTime);
-        return Math.max(beatCount - 1, 1);
+        return LongNoteJudgement.nominalTimes(this).size();
     }
 
     @Override

@@ -10,7 +10,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import arc.record.aff.judge.ArcTopology;
 import arc.record.aff.note.Arc;
+import arc.record.aff.note.ArcTap;
 import arc.record.aff.note.Click;
 import arc.record.aff.note.Hold;
 import arc.record.aff.note.Note;
@@ -24,7 +26,7 @@ import static arc.record.Utils.getDifficultyStr;
 import static arc.record.Utils.getProcessedTitle;
 
 /**
- * 谱面文件信息类，具体规则参考中文wiki的谱面格式页面（问题答案为ifi）.
+ * 谱面文件信息类，具体规则参考中文 wiki 的谱面格式页面。
  *
  * @author MengLeiFudge
  */
@@ -57,52 +59,33 @@ public class Aff {
             "timinggroup\\((?:[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*)?\\)\\{");
     private static final Pattern P_FLICK = Pattern.compile(
             "flick\\([0-9]+," + NUMBER + "," + NUMBER + "," + NUMBER + "," + NUMBER + "\\);");
-    /**
-     * 谱面文件对象.
-     */
+
+    /** 谱面文件对象。 */
     private final File affFile;
-    /**
-     * 歌曲名.
-     */
+    /** 歌曲名。 */
     private final String songName;
-    /**
-     * 歌曲难度.
-     */
+    /** 歌曲难度。 */
     private final String diffStr;
-    /**
-     * 按键列表.
-     */
+    /** 实际产生输入需求的 Note 列表。 */
     private final List<Note> noteList = new ArrayList<>();
-    /**
-     * 视觉列表.
-     * <p>
-     * 仅存储 4k/6k 变化的相关语句，即 enwidencamera。enwidenlanes 仅起显示作用，无需处理。
-     */
+    /** 包含 noinput、视觉和零时长对象的完整 Arc 列表。 */
+    private final List<Arc> arcList = new ArrayList<>();
+    /** enwidencamera 视觉变化列表。 */
     @Setter(AccessLevel.NONE)
     private final List<SceneControl> sceneControlList = new ArrayList<>();
-    /**
-     * 音频偏移.
-     * <p>
-     * {@code AudioOffset:x} 表示谱面整体向前(-)/向后(+)移动x毫秒。
-     * <p>
-     * 如果x≠0，物件在音乐中实际对应的毫秒数=物件时间+x。
-     */
+    /** 完整 Arc 首尾连接图。 */
     @Setter(AccessLevel.NONE)
-    private int audioOffset = 0;
-    /**
-     * 音符密度.
-     * <p>
-     * {@code TimingPointDensityFactor:y} 表示音弧和长条的物量密度调整为正常值的y倍。
-     * <p>
-     * y=1时效果与省略此行相同。
-     */
+    private ArcTopology arcTopology;
+    /** AFF 音频偏移，单位为毫秒。 */
+    @Setter(AccessLevel.NONE)
+    private int audioOffset;
+    /** 长键物量密度倍率。 */
     @Setter(AccessLevel.NONE)
     private float timingPointDensityFactor = 1;
-    /**
-     * 谱面note总数.
-     */
+    /** 谱面总物量。 */
     @Setter(AccessLevel.NONE)
-    private int noteCount = 0;
+    private int noteCount;
+    private int nextSourceId;
 
     public Aff(File affFile) {
         this.affFile = affFile;
@@ -117,16 +100,13 @@ public class Aff {
     }
 
     private void readAffAndPreProcess() {
-        // 用于判断所有蛇有没有头判
-        List<Arc> arcList = new ArrayList<>();
-        // 用于后续处理和计算
-        List<TimingGroup> timingGroupList = new ArrayList<>();
-        // 读取 aff 文件
-        try (BufferedReader br = new BufferedReader(new FileReader(affFile))) {
+        List<TimingGroup> timingGroups = new ArrayList<>();
+        TimingGroup baseTimingGroup = new TimingGroup(0, false);
+        timingGroups.add(baseTimingGroup);
+        try (BufferedReader reader = new BufferedReader(new FileReader(affFile))) {
             String line;
             int lineNumber = 0;
-            // 读取信息部分
-            while ((line = br.readLine()) != null) {
+            while ((line = reader.readLine()) != null) {
                 lineNumber++;
                 String sourceLine = line;
                 try {
@@ -142,7 +122,11 @@ public class Aff {
                         audioOffset = Integer.parseInt(line.substring("AudioOffset:".length()));
                     } else if (line.startsWith("TimingPointDensityFactor:")) {
                         requireFormat(line, P_TIMING_POINT_DENSITY_FACTOR, "TimingPointDensityFactor");
-                        timingPointDensityFactor = Float.parseFloat(line.substring("TimingPointDensityFactor:".length()));
+                        timingPointDensityFactor = Float.parseFloat(
+                                line.substring("TimingPointDensityFactor:".length()));
+                        if (timingPointDensityFactor < 0) {
+                            throw new IllegalArgumentException("暂不支持负 TimingPointDensityFactor");
+                        }
                     } else if (!P_HEADER.matcher(line).matches()) {
                         throw new IllegalArgumentException("无法识别的文件头行");
                     }
@@ -150,11 +134,10 @@ public class Aff {
                     throw createLineParseException(lineNumber, sourceLine, e);
                 }
             }
-            // 创建两个 timingGroup
-            TimingGroup baseTimingGroup = new TimingGroup(false);
-            TimingGroup currTimingGroup = baseTimingGroup;
-            // 读取按键部分
-            while ((line = br.readLine()) != null) {
+
+            TimingGroup currentGroup = baseTimingGroup;
+            int nextTimingGroupId = 1;
+            while ((line = reader.readLine()) != null) {
                 lineNumber++;
                 String sourceLine = line;
                 try {
@@ -164,63 +147,57 @@ public class Aff {
                     }
                     if (line.startsWith("timinggroup")) {
                         requireFormat(line, P_TIMING_GROUP, "timinggroup");
-                        boolean noInput = false;
-                        String param = line.substring("timinggroup(".length(), line.length() - 2);
-                        if (!"".equals(param)) {
-                            // 带参 timinggroup，参数以 _ 分隔
-                            List<String> paramList = Arrays.stream(param.split("_")).toList();
-                            noInput = paramList.contains("noinput");
-                        }
-                        currTimingGroup = new TimingGroup(noInput);
+                        String parameter = line.substring("timinggroup(".length(), line.length() - 2);
+                        boolean noInput = !parameter.isEmpty()
+                                && Arrays.asList(parameter.split("_")).contains("noinput");
+                        currentGroup = new TimingGroup(nextTimingGroupId++, noInput);
+                        timingGroups.add(currentGroup);
                     } else if ("};".equals(line)) {
-                        processTimingGroup(currTimingGroup);
-                        timingGroupList.add(currTimingGroup);
-                        currTimingGroup = baseTimingGroup;
+                        currentGroup = baseTimingGroup;
                     } else if (line.startsWith("(")) {
                         requireFormat(line, P_CLICK, "tap");
-                        if (!currTimingGroup.noInput) {
-                            Click click = new Click(line);
-                            currTimingGroup.noteList.add(click);
+                        Click click = new Click(line);
+                        initializeNote(click, currentGroup);
+                        currentGroup.sourceNotes.add(click);
+                        if (!currentGroup.noInput) {
+                            currentGroup.noteList.add(click);
                         }
                     } else if (line.startsWith("hold")) {
                         requireFormat(line, P_HOLD, "hold");
-                        if (!currTimingGroup.noInput) {
-                            Hold hold = new Hold(line);
-                            currTimingGroup.noteList.add(hold);
+                        Hold hold = new Hold(line);
+                        initializeNote(hold, currentGroup);
+                        currentGroup.sourceNotes.add(hold);
+                        if (!currentGroup.noInput) {
+                            currentGroup.noteList.add(hold);
                         }
                     } else if (line.startsWith("arc")) {
                         requireFormat(line, P_ARC, "arc");
-                        if (currTimingGroup.noInput) {
-                            continue;
-                        }
                         Arc arc = new Arc(line);
-                        // 不处理黑线
-                        if (arc.getArctapTimingList().isEmpty() && !arc.isRealArc()) {
-                            continue;
+                        initializeNote(arc, currentGroup);
+                        currentGroup.sourceNotes.add(arc);
+                        arcList.add(arc);
+                        List<ArcTap> arcTaps = arc.getArcTapList();
+                        for (ArcTap arcTap : arcTaps) {
+                            initializeNote(arcTap, currentGroup);
+                            currentGroup.sourceNotes.add(arcTap);
+                            if (!currentGroup.noInput) {
+                                currentGroup.noteList.add(arcTap);
+                            }
                         }
-                        if (!arc.isRealArc()) {
-                            // 多个天键
-                            currTimingGroup.noteList.addAll(arc.getArcTapList());
-                        } else {
-                            // 蛇需要添加到arcList中
-                            arcList.add(arc);
-                            currTimingGroup.noteList.add(arc);
+                        if (!currentGroup.noInput && arc.isRealArc()) {
+                            currentGroup.noteList.add(arc);
                         }
                     } else if (line.startsWith("timing")) {
                         requireFormat(line, P_TIMING, "timing");
-                        if (!currTimingGroup.noInput) {
-                            Timing timing = new Timing(line);
-                            currTimingGroup.timingList.add(timing);
-                        }
+                        currentGroup.timingList.add(new Timing(line));
                     } else if (line.startsWith("camera")) {
                         requireFormat(line, P_CAMERA, "camera");
                     } else if (line.startsWith("scenecontrol")) {
                         requireFormat(line, P_SCENE_CONTROL, "scenecontrol");
                         if (line.contains(",enwidencamera,") || line.contains(",enwidencamera)")) {
                             requireFormat(line, P_ENWIDEN_CAMERA, "enwidencamera scenecontrol");
-                            if (!currTimingGroup.noInput) {
-                                SceneControl sceneControl = new SceneControl(line);
-                                sceneControlList.add(sceneControl);
+                            if (!currentGroup.noInput) {
+                                sceneControlList.add(new SceneControl(line));
                             }
                         }
                     } else if (line.startsWith("flick")) {
@@ -232,97 +209,59 @@ public class Aff {
                     throw createLineParseException(lineNumber, sourceLine, e);
                 }
             }
-            processTimingGroup(baseTimingGroup);
-            timingGroupList.add(baseTimingGroup);
         } catch (IOException e) {
-            e.printStackTrace();
+            throw new IllegalStateException("无法读取谱面：" + affFile.getAbsolutePath(), e);
+        }
+
+        List<Timing> baseTimings = baseTimingGroup.timingList;
+        for (TimingGroup timingGroup : timingGroups) {
+            assignTimingContext(timingGroup, baseTimings);
+            noteList.addAll(timingGroup.noteList);
         }
         Collections.sort(arcList);
-        // 检查是否存在两个蛇时间、位置重合的情况，bpm无所谓
-        // 如果重合，移除bpm较低的那个蛇
-        int i = 0;
-        Arc arcToBeRemoved = null;
-        while (i < arcList.size() - 1) {
-            Arc arc1 = arcList.get(i);
-            for (int j = i + 1; j < arcList.size(); j++) {
-                Arc arc2 = arcList.get(j);
-                if (arc2.getT1() > arc1.getT1()) {
-                    // 快速循环
-                    break;
-                }
-                // 颜色、时间、位置相同就行，别的条件暂时不管
-                if (arc1.getColor() == arc2.getColor()
-                        && arc1.getT1() == arc2.getT1() && arc1.getT2() == arc2.getT2()
-                        && arc1.getX1() == arc2.getX1() && arc1.getY1() == arc2.getY1()
-                        && arc1.getX2() == arc2.getX2() && arc1.getY2() == arc2.getY2()) {
-                    // beatTime短 = bpm高 = 不移除
-                    arcToBeRemoved = arc1.getBeatTime() > arc2.getBeatTime() ? arc1 : arc2;
-                    break;
-                }
-            }
-            if (arcToBeRemoved != null) {
-                arcList.remove(arcToBeRemoved);
-                for (var timingGroup : timingGroupList) {
-                    if (timingGroup.noInput) {
-                        continue;
-                    }
-                    timingGroup.noteList.remove(arcToBeRemoved);
-                }
-                arcToBeRemoved = null;
-            } else {
-                i++;
-            }
-        }
+        arcTopology = new ArcTopology(arcList);
         Collections.sort(sceneControlList);
-        // 遍历 arcList，修改 hasHead 变量
-        for (i = 0; i < arcList.size(); i++) {
-            Arc arci = arcList.get(i);
-            for (int j = i + 1; j < arcList.size(); j++) {
-                Arc arcj = arcList.get(j);
-                if (Math.abs(arcj.getX1() - arci.getX2()) < 0.1
-                        && Math.abs(arcj.getY1() - arci.getY2()) < 1e-5
-                        && Math.abs(arcj.getT1() - arci.getT2()) <= 10) {
-                    arcj.setHasHead(true);
-                }
-            }
-        }
-        // 构建 noteList，具有 noinput 属性的按键不会加入 noteList
-        for (var timingGroup : timingGroupList) {
-            if (timingGroup.noInput) {
-                continue;
-            }
-            if (!timingGroup.noteList.isEmpty()) {
-                noteList.addAll(timingGroup.noteList);
-            }
-        }
         Collections.sort(noteList);
-        // 计算 noteCount
-        for (var note : noteList) {
-            noteCount += note.getNoteCount();
+        noteCount = noteList.stream().mapToInt(Note::getNoteCount).sum();
+    }
+
+    private void initializeNote(Note note, TimingGroup timingGroup) {
+        note.setSourceId(nextSourceId++);
+        note.setTimingGroupId(timingGroup.id);
+        note.setNoInput(timingGroup.noInput);
+    }
+
+    private void assignTimingContext(TimingGroup timingGroup, List<Timing> baseTimings) {
+        List<Timing> timings = timingGroup.timingList.isEmpty() ? baseTimings : timingGroup.timingList;
+        if (timings.isEmpty()) {
+            if (!timingGroup.sourceNotes.isEmpty()) {
+                throw new IllegalArgumentException("timinggroup 缺少可用 timing：" + affFile.getAbsolutePath());
+            }
+            return;
+        }
+        Collections.sort(timings);
+        Collections.sort(timingGroup.sourceNotes);
+        int timingIndex = 0;
+        for (Note note : timingGroup.sourceNotes) {
+            while (timingIndex + 1 < timings.size()
+                    && timings.get(timingIndex + 1).getT() <= note.getT1()) {
+                timingIndex++;
+            }
+            double rawBpm = Math.abs(timings.get(timingIndex).getBpm());
+            double realBpm = rawBpm >= 256 ? rawBpm / 2.0 : rawBpm;
+            double judgeBpm = realBpm * timingPointDensityFactor;
+            note.setTimingBpm(realBpm);
+            note.setJudgeBpm(judgeBpm);
+            note.setBeatTime(judgeBpm == 0 ? Float.MAX_VALUE : (float) (30000.0 / judgeBpm));
         }
     }
 
-    /**
-     * 校验规范化后的谱面行是否符合已识别类别的完整格式。
-     *
-     * @param line    去除前导空白后的谱面行
-     * @param pattern 该行类别的完整格式
-     * @param type    用于错误消息的行类别
-     */
     private static void requireFormat(String line, Pattern pattern, String type) {
         if (!pattern.matcher(line).matches()) {
             throw new IllegalArgumentException(type + " 行格式不符合预期");
         }
     }
 
-    /**
-     * 为行内解析异常补充输入谱面位置，同时保留原始异常。
-     *
-     * @param lineNumber 从 1 开始的物理行号
-     * @param sourceLine 未去除空格的原始行
-     * @param cause      原始解析异常
-     * @return 带谱面上下文的异常
-     */
     private IllegalArgumentException createLineParseException(
             int lineNumber, String sourceLine, RuntimeException cause) {
         return new IllegalArgumentException(
@@ -332,67 +271,38 @@ public class Aff {
     }
 
     /**
-     * 根据 timingList 的情况，给每个 note 赋值 beatTime.
+     * 返回指定谱面时刻的 4K/6K 过渡比例。
      *
-     * @param timingGroup 要处理的时间组
+     * @param time 谱面时间，单位为毫秒
+     * @return 0 表示 4K，1 表示 6K
      */
-    private void processTimingGroup(TimingGroup timingGroup) {
-        Collections.sort(timingGroup.noteList);
-        Collections.sort(timingGroup.timingList);
-        int timingIndex = -1;
-        float bpm;
-        int nextT = Integer.MIN_VALUE;
-        float beatTime = 0;
-        for (var note : timingGroup.noteList) {
-            while (note.getT1() >= nextT) {
-                timingIndex++;
-                bpm = Math.abs(timingGroup.timingList.get(timingIndex).getBpm());
-                nextT = timingIndex == timingGroup.timingList.size() - 1
-                        ? Integer.MAX_VALUE
-                        : timingGroup.timingList.get(timingIndex + 1).getT();
-                if (bpm == 0) {
-                    beatTime = Float.MAX_VALUE;
-                } else {
-                    beatTime = bpm >= 256 ? 60000 / bpm : 30000 / bpm;
-                    beatTime /= timingPointDensityFactor;
-                }
-            }
-            note.setBeatTime(beatTime);
-        }
-    }
-
-    /**
-     * 返回某个时刻谱面的 4/6k 进度，范围 0-1.
-     *
-     * @param time 目标时间戳
-     * @return 某个时刻谱面的 4/6k 进度，0 表示 4k，1 表示 6k。
-     */
-    public double getRatio46k(int time) {
+    public double getRatio46k(double time) {
         double ratio46k = 0;
-        for (var control : sceneControlList) {
-            if (control.getT() <= time) {
-                if (control.getT() + control.getDuration() <= time) {
-                    ratio46k = control.isTo6k() ? 1 : 0;
-                } else {
-                    double progress = (time - control.getT()) * 1.0 / control.getDuration();
-                    ratio46k = control.isTo6k() ? progress : 1 - progress;
-                }
-            } else {
+        for (SceneControl control : sceneControlList) {
+            if (control.getT() > time) {
                 break;
+            }
+            if (control.getT() + control.getDuration() <= time) {
+                ratio46k = control.isTo6k() ? 1 : 0;
+            } else {
+                double progress = (time - control.getT()) / control.getDuration();
+                ratio46k = control.isTo6k() ? progress : 1 - progress;
             }
         }
         return ratio46k;
     }
 
+    public double getRatio46k(int time) {
+        return getRatio46k((double) time);
+    }
+
     /**
-     * 返回某个时刻谱面 y 最大值的一半.
-     * <p>
-     * ratio46k=0，返回 1/2；ratio46k=1，返回 1.61/2。
+     * 返回指定时刻天空判定区域纵坐标上限的一半。
      *
-     * @param time 目标时间戳
-     * @return 某个时刻谱面 y 最大值的一半
+     * @param time 谱面时间，单位为毫秒
+     * @return 4K 时为 0.5，6K 时为 0.805
      */
     public double getMiddleY(int time) {
-        return (1 + getRatio46k(time) * (1.61 - 1)) / 2;
+        return (1 + getRatio46k(time) * 0.61) / 2;
     }
 }
