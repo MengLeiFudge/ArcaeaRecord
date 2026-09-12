@@ -5,6 +5,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.function.Function;
 
+import arc.record.aff.judge.AffPoint;
+
 import static arc.record.Settings.CLICK_TIME;
 
 /**
@@ -28,8 +30,8 @@ public enum Resolution {
     R4_3_1200_900(1200, false),
     R4_3_1440_1080(1440, false);
 
-    private static final Function<double[], int[]> GAME_TO_SCREEN_16_9;
-    private static final Function<double[], int[]> GAME_TO_SCREEN_4_3;
+    private static final Projection COORDINATES_16_9;
+    private static final Projection COORDINATES_4_3;
 
     static {
         // 以 y=720 为基准，构建坐标转换方法
@@ -52,7 +54,7 @@ public enum Resolution {
         };
         // x,y 表示谱面坐标；X,Y 表示模拟器脚本坐标
         // 雷电模拟器脚本中坐标最大值为分辨率的 15 倍
-        Function<int[][], Function<double[], int[]>> process = (param) -> {
+        Function<int[][], Projection> process = (param) -> {
             // (0,0)到(1,0)的X变化量
             double dX0_4k = (param[1][0] - param[0][0]) / 2.0;
             // (0,1)到(1,1)的X变化量
@@ -72,7 +74,7 @@ public enum Resolution {
             double X_x0p5_6k = (param[8][0] * 15) / 2.0;
             double Y_y0_6k = (param[4][1] + param[5][1]) / 2.0;
             double dY_6k = (param[6][1] + param[7][1]) / 2.0 - Y_y0_6k;
-            return (inputs) -> {
+            Function<double[], int[]> forward = (inputs) -> {
                 double X_4K = X_x0p5_4k + ((dX1_4k - dX0_4k) * inputs[1] + dX0_4k) * (inputs[0] - 0.5);
                 double Y_4K = Y_y0_4k + inputs[1] * dY_4k;
                 double X_6K = X_x0p5_6k + ((dX1_6k - dX0_6k) * inputs[1] + dX0_6k) * (inputs[0] - 0.5);
@@ -81,9 +83,22 @@ public enum Resolution {
                 int Y = (int) ((Y_4K + (Y_6K - Y_4K) * inputs[2]) * inputs[3]);
                 return new int[]{X, Y};
             };
+            Function<double[], AffPoint> inverse = (inputs) -> {
+                double ratio = inputs[2];
+                double X = inputs[0] / inputs[3];
+                double Y = inputs[1] / inputs[3];
+                double y0 = Y_y0_4k + (Y_y0_6k - Y_y0_4k) * ratio;
+                double dy = dY_4k + (dY_6k - dY_4k) * ratio;
+                double y = (Y - y0) / dy;
+                double dx4 = (dX1_4k - dX0_4k) * y + dX0_4k;
+                double dx6 = (dX1_6k - dX0_6k) * y + dX0_6k;
+                double center = X_x0p5_4k + (X_x0p5_6k - X_x0p5_4k) * ratio;
+                return new AffPoint((X - center) / (dx4 + (dx6 - dx4) * ratio) + 0.5, y);
+            };
+            return new Projection(forward, inverse);
         };
-        GAME_TO_SCREEN_16_9 = process.apply(PARAMS16_9);
-        GAME_TO_SCREEN_4_3 = process.apply(PARAMS4_3);
+        COORDINATES_16_9 = process.apply(PARAMS16_9);
+        COORDINATES_4_3 = process.apply(PARAMS4_3);
     }
 
     /**
@@ -138,9 +153,38 @@ public enum Resolution {
      * 输入谱面x, y, 4/6k比例，输出模拟器坐标X, Y.
      */
     public int[] convertToXY(double x, double y, double ratio46k) {
-        return is16_9
-                ? GAME_TO_SCREEN_16_9.apply(new double[]{x, y, ratio46k, ratioHeight720})
-                : GAME_TO_SCREEN_4_3.apply(new double[]{x, y, ratio46k, ratioHeight720});
+        return (is16_9 ? COORDINATES_16_9 : COORDINATES_4_3).forward()
+                .apply(new double[]{x, y, ratio46k, ratioHeight720});
+    }
+
+    /**
+     * 判断当前屏幕比例是否已有可用于正向回放的真实投影校准。
+     *
+     * @return 16:9 已校准；4:3 占位数据不能作为玩法验证证据
+     */
+    public boolean hasCalibratedProjection() {
+        return is16_9;
+    }
+
+    /**
+     * 从脚本实际屏幕位置反解 AFF 坐标，不把整数输出重新吸附到计划锚点。
+     *
+     * @param x 脚本横坐标，单位为屏幕像素的十五分之一
+     * @param y 脚本纵坐标，向下为正
+     * @param ratio46k 当前游戏时刻的 4K/6K 过渡比例
+     * @return 使用同一套未取整校准系数反解的位置
+     */
+    public AffPoint convertToAffPoint(int x, int y, double ratio46k) {
+        if (!hasCalibratedProjection()) {
+            throw new UnsupportedOperationException("4:3 投影尚未校准，不能进行正向回放");
+        }
+        return COORDINATES_16_9.inverse()
+                .apply(new double[]{x, y, ratio46k, ratioHeight720});
+    }
+
+    /** 同一套校准系数的双向投影，反解不依赖已经取整的正解采样。 */
+    private record Projection(Function<double[], int[]> forward,
+                              Function<double[], AffPoint> inverse) {
     }
 
     public int getMaxX() {

@@ -68,12 +68,12 @@ public class Aff {
     private final String diffStr;
     /** 实际产生输入需求的 Note 列表。 */
     private final List<Note> noteList = new ArrayList<>();
-    /** 包含 noinput、视觉和零时长对象的完整 Arc 列表。 */
+    /** 会产生持续输入需求或连接身份的实体 Arc 列表。 */
     private final List<Arc> arcList = new ArrayList<>();
     /** enwidencamera 视觉变化列表。 */
     @Setter(AccessLevel.NONE)
     private final List<SceneControl> sceneControlList = new ArrayList<>();
-    /** 完整 Arc 首尾连接图。 */
+    /** 输入实体 Arc 的严格首尾连接图。 */
     @Setter(AccessLevel.NONE)
     private ArcTopology arcTopology;
     /** AFF 音频偏移，单位为毫秒。 */
@@ -157,35 +157,39 @@ public class Aff {
                     } else if (line.startsWith("(")) {
                         requireFormat(line, P_CLICK, "tap");
                         Click click = new Click(line);
+                        if (currentGroup.noInput) {
+                            continue;
+                        }
                         initializeNote(click, currentGroup);
                         currentGroup.sourceNotes.add(click);
-                        if (!currentGroup.noInput) {
-                            currentGroup.noteList.add(click);
-                        }
+                        currentGroup.noteList.add(click);
                     } else if (line.startsWith("hold")) {
                         requireFormat(line, P_HOLD, "hold");
                         Hold hold = new Hold(line);
+                        if (currentGroup.noInput) {
+                            continue;
+                        }
                         initializeNote(hold, currentGroup);
                         currentGroup.sourceNotes.add(hold);
-                        if (!currentGroup.noInput) {
-                            currentGroup.noteList.add(hold);
-                        }
+                        currentGroup.noteList.add(hold);
                     } else if (line.startsWith("arc")) {
                         requireFormat(line, P_ARC, "arc");
                         Arc arc = new Arc(line);
+                        if (currentGroup.noInput) {
+                            arc.getArcTapList();
+                            continue;
+                        }
                         initializeNote(arc, currentGroup);
-                        currentGroup.sourceNotes.add(arc);
-                        arcList.add(arc);
                         List<ArcTap> arcTaps = arc.getArcTapList();
+                        if (arc.isRealArc()) {
+                            currentGroup.sourceNotes.add(arc);
+                            currentGroup.noteList.add(arc);
+                            arcList.add(arc);
+                        }
                         for (ArcTap arcTap : arcTaps) {
                             initializeNote(arcTap, currentGroup);
                             currentGroup.sourceNotes.add(arcTap);
-                            if (!currentGroup.noInput) {
-                                currentGroup.noteList.add(arcTap);
-                            }
-                        }
-                        if (!currentGroup.noInput && arc.isRealArc()) {
-                            currentGroup.noteList.add(arc);
+                            currentGroup.noteList.add(arcTap);
                         }
                     } else if (line.startsWith("timing")) {
                         requireFormat(line, P_TIMING, "timing");
@@ -196,8 +200,9 @@ public class Aff {
                         requireFormat(line, P_SCENE_CONTROL, "scenecontrol");
                         if (line.contains(",enwidencamera,") || line.contains(",enwidencamera)")) {
                             requireFormat(line, P_ENWIDEN_CAMERA, "enwidencamera scenecontrol");
+                            SceneControl control = new SceneControl(line);
                             if (!currentGroup.noInput) {
-                                sceneControlList.add(new SceneControl(line));
+                                sceneControlList.add(control);
                             }
                         }
                     } else if (line.startsWith("flick")) {

@@ -63,38 +63,78 @@ public final class TouchStrokeRenderer {
         List<TouchAnchor> anchors = new ArrayList<>(stroke.anchors());
         TouchAnchor lastAnchor = anchors.getLast();
         if (stroke.endTime() > lastAnchor.time() + 1e-7) {
-            anchors.add(new TouchAnchor(stroke.endTime(), lastAnchor.position()));
+            anchors.add(new TouchAnchor(
+                    stroke.endTime(), lastAnchor.position(), true, TouchAnchor.Transition.LINEAR));
         }
 
         TreeMap<Integer, RenderedEvent> events = new TreeMap<>();
         ProjectedPoint initial = project(
                 aff, resolution, anchors.getFirst(), anchors.getFirst(), anchors.getFirst().time());
         putEvent(events, initial, true, aff);
-        ProjectedPoint lastEmitted = initial;
+        RenderProgress progress = new RenderProgress(initial, 0);
         for (int i = 1; i < anchors.size(); i++) {
             TouchAnchor from = anchors.get(i - 1);
             TouchAnchor to = anchors.get(i);
-            List<ProjectedPoint> polyline = new ArrayList<>();
-            ProjectedPoint start = project(aff, resolution, from, to, from.time());
-            polyline.add(start);
-            for (double splitTime : projectionSplitTimes(aff, from.time(), to.time())) {
-                ProjectedPoint split = project(aff, resolution, from, to, splitTime);
-                subdivide(aff, resolution, from, to, start, split,
-                        moveDistance, 0, polyline);
-                start = split;
-            }
-            ProjectedPoint end = project(aff, resolution, from, to, to.time());
-            subdivide(aff, resolution, from, to, start, end,
-                    moveDistance, 0, polyline);
-            lastEmitted = addDistanceEvents(
-                    aff, resolution, from, to, polyline, moveDistance, events, lastEmitted);
-            if (lastEmitted.screenX() != end.screenX()
-                    || lastEmitted.screenY() != end.screenY()) {
-                putEvent(events, end, true, aff);
-                lastEmitted = end;
+            if (to.transition() == TouchAnchor.Transition.STEP) {
+                progress = renderStepSegment(
+                        aff, resolution, from, to, moveDistance, events, progress);
+            } else {
+                progress = renderLinearSegment(
+                        aff, resolution, from, to, moveDistance, events, progress);
             }
         }
         return List.copyOf(events.values());
+    }
+
+    private RenderProgress renderStepSegment(
+            Aff aff, Resolution resolution, TouchAnchor from, TouchAnchor to,
+            double moveDistance, Map<Integer, RenderedEvent> events,
+            RenderProgress progress) {
+        TouchAnchor held = new TouchAnchor(
+                to.time(), from.position(), false, TouchAnchor.Transition.LINEAR);
+        progress = renderLinearSegment(
+                aff, resolution, from, held, moveDistance, events, progress);
+        ProjectedPoint target = project(aff, resolution, to, to, to.time());
+        boolean changed = progress.lastEmitted().screenX() != target.screenX()
+                || progress.lastEmitted().screenY() != target.screenY();
+        int timing = (int) Math.round(target.time());
+        if (changed || events.containsKey(timing)) {
+            if (putEvent(events, target, to.required(), aff)) {
+                progress = new RenderProgress(target, 0);
+            }
+        }
+        return new RenderProgress(progress.lastEmitted(), 0);
+    }
+
+    private RenderProgress renderLinearSegment(
+            Aff aff, Resolution resolution, TouchAnchor from, TouchAnchor to,
+            double moveDistance, Map<Integer, RenderedEvent> events,
+            RenderProgress progress) {
+        List<ProjectedPoint> polyline = new ArrayList<>();
+        ProjectedPoint start = project(aff, resolution, from, to, from.time());
+        polyline.add(start);
+        for (double splitTime : projectionSplitTimes(aff, from.time(), to.time())) {
+            ProjectedPoint split = project(aff, resolution, from, to, splitTime);
+            subdivide(aff, resolution, from, to, start, split,
+                    moveDistance, 0, polyline);
+            start = split;
+        }
+        ProjectedPoint end = project(aff, resolution, from, to, to.time());
+        subdivide(aff, resolution, from, to, start, end,
+                moveDistance, 0, polyline);
+        progress = addDistanceEvents(
+                aff, resolution, from, to, polyline, moveDistance, events, progress);
+        if (!to.required()) {
+            return progress;
+        }
+
+        boolean changed = progress.lastEmitted().screenX() != end.screenX()
+                || progress.lastEmitted().screenY() != end.screenY();
+        int timing = (int) Math.round(end.time());
+        if ((changed || events.containsKey(timing)) && putEvent(events, end, true, aff)) {
+            progress = new RenderProgress(end, 0);
+        }
+        return new RenderProgress(progress.lastEmitted(), 0);
     }
 
     private static List<Double> projectionSplitTimes(Aff aff, double from, double to) {
@@ -131,11 +171,12 @@ public final class TouchStrokeRenderer {
                 threshold, depth + 1, output);
     }
 
-    private ProjectedPoint addDistanceEvents(
+    private RenderProgress addDistanceEvents(
             Aff aff, Resolution resolution, TouchAnchor from, TouchAnchor to,
             List<ProjectedPoint> polyline, double threshold,
-            Map<Integer, RenderedEvent> events, ProjectedPoint lastEmitted) {
-        double accumulated = 0;
+            Map<Integer, RenderedEvent> events, RenderProgress progress) {
+        double accumulated = progress.accumulatedDistance();
+        ProjectedPoint lastEmitted = progress.lastEmitted();
         ProjectedPoint segmentStart = polyline.getFirst();
         for (int i = 1; i < polyline.size(); i++) {
             ProjectedPoint segmentEnd = polyline.get(i);
@@ -158,7 +199,7 @@ public final class TouchStrokeRenderer {
             accumulated += length;
             segmentStart = segmentEnd;
         }
-        return lastEmitted;
+        return new RenderProgress(lastEmitted, accumulated);
     }
 
     private ProjectedPoint project(Aff aff, Resolution resolution,
@@ -224,6 +265,9 @@ public final class TouchStrokeRenderer {
     }
 
     private record ProjectedPoint(double time, int screenX, int screenY) {
+    }
+
+    private record RenderProgress(ProjectedPoint lastEmitted, double accumulatedDistance) {
     }
 
     private record RenderedEvent(int timing, int x, int y, boolean required) {

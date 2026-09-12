@@ -68,6 +68,23 @@ public final class LongNoteJudgement {
     }
 
     /**
+     * 判断名义时间是否是严格连接为长 Arc 额外追加的头判。
+     *
+     * <p>短于一拍的连接 Arc 只会移动原有判定时间，不产生需要固定头坐标的新增身份。</p>
+     *
+     * @param arc 输入实体 Arc
+     * @param nominalTime 待分类的名义判定时间，单位为毫秒
+     * @return Arc 有前驱、持续至少一拍且名义时间位于起点时返回 true
+     */
+    public static boolean isAdditionalArcHead(Arc arc, double nominalTime) {
+        if (!arc.hasPredecessor() || arc.getT2() <= arc.getT1() || arc.getJudgeBpm() == 0) {
+            return false;
+        }
+        double beats = (arc.getT2() - arc.getT1()) / beatMillis(arc);
+        return beats >= 1.0 && Math.abs(nominalTime - arc.getT1()) <= EPSILON;
+    }
+
+    /**
      * 返回长键起始 timing 下的一拍时长。
      *
      * @param note 已赋予 timing 上下文的长键

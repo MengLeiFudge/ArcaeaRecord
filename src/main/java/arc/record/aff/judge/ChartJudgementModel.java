@@ -27,7 +27,7 @@ public final class ChartJudgementModel {
     /**
      * 从变体 Note 列表建立普通点击和长键窗口。
      *
-     * @param aff      保留完整 Arc 拓扑的谱面
+     * @param aff      保留输入实体 Arc 拓扑的谱面
      * @param noteList 已完成 miss/小 Pure 修改的输入 Note
      * @return 判定需求模型
      */
@@ -75,7 +75,14 @@ public final class ChartJudgementModel {
                 }
                 double start = Math.max(nominalTime, note.getT1());
                 double end = Math.min(deadline, note.getT2());
-                JudgePoint point = new JudgePoint(pointId++, nominalTime, note, true);
+                boolean countsCombo = !(note instanceof Arc arc)
+                        || arc.getArctapTimingList().isEmpty();
+                JudgePoint.Kind kind = note instanceof Arc arc
+                        && LongNoteJudgement.isAdditionalArcHead(arc, nominalTime)
+                        ? JudgePoint.Kind.ARC_HEAD
+                        : JudgePoint.Kind.CONTINUOUS;
+                JudgePoint point = new JudgePoint(
+                        pointId++, nominalTime, note, countsCombo, kind);
                 demands.add(new CoverageDemand(point, new JudgeWindow(point, start, end)));
             }
             int componentId;

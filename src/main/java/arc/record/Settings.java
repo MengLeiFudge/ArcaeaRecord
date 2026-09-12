@@ -75,11 +75,11 @@ public class Settings {
      */
     public static final double TOUCH_MOVE_DISTANCE_RATIO = 0.01;
     /**
-     * 旧 Action 路径的固定采样频率，仅为保留未删除的兼容代码。
+     * Arc 连续覆盖路径在每个半拍判定间隔内使用的几何检查频率。
      * <p>
-     * 生产转换主路径不再使用该值。
+     * 检查点用于约束蛇身轨迹；最终 record 操作仍由屏幕移动距离阈值稀疏化。
+     * 旧 Action 兼容路径同时复用该值。
      */
-    @Deprecated
     public static final float TOUCH_SAMPLE_FREQUENCY = 8;
     /**
      * 指示是否为调试模式.

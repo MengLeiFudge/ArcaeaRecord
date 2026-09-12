@@ -47,7 +47,10 @@ public final class JudgeWindow {
     }
 
     /**
-     * 计算窗口来源物件在指定时刻能够被覆盖的精确位置。
+     * 计算窗口在指定时刻用于生成候选的中心位置。
+     *
+     * <p>连接追加的 Arc 头判固定为来源 Arc 的头坐标；普通 Arc 返回实际时刻的
+     * 曲线中心，最终覆盖由移动判定矩形决定。</p>
      *
      * @param time 窗口内谱面时间，单位为毫秒
      * @return AFF 坐标
@@ -58,7 +61,10 @@ public final class JudgeWindow {
         }
         Note source = point.source();
         if (source instanceof Arc arc) {
-            double[] xy = arc.getAffPoint(time);
+            double positionTime = point.kind() == JudgePoint.Kind.ARC_HEAD
+                    ? arc.getT1()
+                    : time;
+            double[] xy = arc.getAffPoint(positionTime);
             return new AffPoint(xy[0], xy[1]);
         }
         if (source instanceof Hold hold) {
@@ -69,11 +75,13 @@ public final class JudgeWindow {
     }
 
     /**
-     * 查找物件在窗口内经过指定精确坐标的最早时刻。
+     * 查找指定触点在窗口内首次覆盖来源物件的时刻。
+     *
+     * <p>Hold 和连接追加头判要求精确坐标；普通 Arc 使用随曲线中心移动的矩形范围。</p>
      *
      * @param position  希望保持的触点位置
      * @param notBefore 不早于该时刻寻找，单位为毫秒
-     * @return 存在精确覆盖机会时返回对应时刻
+     * @return 存在覆盖机会时返回对应的最早时刻
      */
     public OptionalDouble firstTimeAt(AffPoint position, double notBefore) {
         double from = Math.max(startTime, notBefore);
@@ -81,31 +89,24 @@ public final class JudgeWindow {
             return OptionalDouble.empty();
         }
         Note source = point.source();
-        if (source instanceof Hold) {
+        if (source instanceof Hold || point.kind() == JudgePoint.Kind.ARC_HEAD) {
             return positionAt(from).samePosition(position)
                     ? OptionalDouble.of(from)
                     : OptionalDouble.empty();
         }
-        Arc arc = (Arc) source;
         AffPoint fromPoint = positionAt(from);
-        if (fromPoint.samePosition(position)) {
+        if (ArcJudgementRange.covers(fromPoint, position)) {
             return OptionalDouble.of(from);
-        }
-        AffPoint endPoint = positionAt(endTime);
-        if (endPoint.samePosition(position)) {
-            return OptionalDouble.of(endTime);
         }
 
         double span = endTime - from;
-        double bestTime = from;
-        double bestDistance = fromPoint.distanceSquared(position);
+        double bestDistance = ArcJudgementRange.distanceSquared(fromPoint, position);
         int bestIndex = 0;
         for (int i = 1; i <= SEARCH_SEGMENTS; i++) {
             double time = from + span * i / SEARCH_SEGMENTS;
-            double distance = positionAt(time).distanceSquared(position);
+            double distance = ArcJudgementRange.distanceSquared(positionAt(time), position);
             if (distance < bestDistance) {
                 bestDistance = distance;
-                bestTime = time;
                 bestIndex = i;
             }
         }
@@ -114,15 +115,16 @@ public final class JudgeWindow {
         for (int i = 0; i < SEARCH_ITERATIONS; i++) {
             double first = left + (right - left) / 3.0;
             double second = right - (right - left) / 3.0;
-            if (positionAt(first).distanceSquared(position)
-                    <= positionAt(second).distanceSquared(position)) {
+            if (ArcJudgementRange.distanceSquared(positionAt(first), position)
+                    <= ArcJudgementRange.distanceSquared(positionAt(second), position)) {
                 right = second;
             } else {
                 left = first;
             }
         }
         double refinedTime = (left + right) / 2.0;
-        double refinedDistance = positionAt(refinedTime).distanceSquared(position);
+        double refinedDistance = ArcJudgementRange.distanceSquared(
+                positionAt(refinedTime), position);
         if (refinedDistance > POSITION_EPSILON_SQUARED) {
             return OptionalDouble.empty();
         }
@@ -132,7 +134,8 @@ public final class JudgeWindow {
         right = refinedTime;
         for (int i = 0; i < SEARCH_ITERATIONS; i++) {
             double middle = (left + right) / 2.0;
-            if (positionAt(middle).distanceSquared(position) <= POSITION_EPSILON_SQUARED) {
+            if (ArcJudgementRange.distanceSquared(positionAt(middle), position)
+                    <= POSITION_EPSILON_SQUARED) {
                 right = middle;
             } else {
                 left = middle;

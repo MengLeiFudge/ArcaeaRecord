@@ -11,9 +11,9 @@ import java.util.TreeMap;
 import arc.record.aff.note.Arc;
 
 /**
- * 完整 AFF Arc 集合的严格首尾连接图。
+ * 输入实体 Arc 集合的严格首尾连接图。
  *
- * <p>图中包含 noinput、零时长、带 Arctap 以及非输入 Arc。连接只影响判定点和音弧组，
+ * <p>图中保留零时长和携带 Arctap 的 false Arc。连接只影响判定点和音弧组，
  * 不直接表示最终应使用同一个物理触点。</p>
  */
 public final class ArcTopology {
@@ -27,9 +27,9 @@ public final class ArcTopology {
     private final Map<Integer, List<Arc>> components;
 
     /**
-     * 根据完整 Arc 列表建立连接图，并把前驱/后继状态写回 Arc。
+     * 根据输入实体 Arc 列表建立连接图，并把前驱/后继状态写回 Arc。
      *
-     * @param sourceArcs 保留稳定 sourceId 的完整 Arc 列表
+     * @param sourceArcs 保留稳定 sourceId 的输入实体 Arc 列表
      */
     public ArcTopology(List<Arc> sourceArcs) {
         this.arcs = sourceArcs.stream()
@@ -185,7 +185,7 @@ public final class ArcTopology {
     }
 
     /**
-     * 返回完整 Arc 列表。
+     * 返回输入实体 Arc 列表。
      *
      * @return 按时间排序且不可修改的 Arc 列表
      */

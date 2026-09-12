@@ -11,7 +11,7 @@ import static arc.record.Utils.dfTime;
 import static arc.record.Utils.dfXY;
 
 /**
- * AFF Arc 原始对象，完整保留输入类型、曲线、颜色和 Arctap 信息。
+ * AFF Arc 对象，保留输入类型、曲线、颜色和 Arctap 信息。
  *
  * @author MengLeiFudge
  */
@@ -67,12 +67,14 @@ public class Arc extends Note {
     }
 
     /**
-     * 兼容旧调用者的实体 Arc 判断。
+     * 判断父 Arc 是否具有持续输入身份。
      *
-     * @return 原始类型为 false 且不包含 Arctap 时返回 true
+     * <p>悬挂 Arctap 是独立点击身份，不改变 false 父 Arc 的持续输入语义。</p>
+     *
+     * @return 原始类型为 false 时返回 true
      */
     public boolean isRealArc() {
-        return arcType.acceptsInput() && arctapTimingList.isEmpty();
+        return arcType.acceptsInput();
     }
 
     /**
@@ -102,14 +104,16 @@ public class Arc extends Note {
     }
 
     /**
-     * 返回 Arc 自身携带的物量。
+     * 返回父 Arc 自身携带的持续物量。
      *
-     * @return Arctap 物量或输入 Arc 的名义判定点数量
+     * <p>Arctap 由独立 Note 计数；携带 Arctap 的父 Arc 仍提供持续覆盖，但自身不重复计量。</p>
+     *
+     * @return 输入 Arc 的名义判定点数量
      */
     @Override
     public int getNoteCount() {
         if (!arctapTimingList.isEmpty()) {
-            return arcType == ArcType.DESIGNANT ? 0 : arctapTimingList.size();
+            return 0;
         }
         if (!arcType.acceptsInput() || noInput || t1 == t2) {
             return 0;
