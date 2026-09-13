@@ -35,14 +35,10 @@ public final class TouchStrokeRenderer {
         TouchIdManager idManager = new TouchIdManager();
         List<SimpleAction> result = new ArrayList<>();
         for (TouchStroke stroke : strokes) {
-            List<RenderedEvent> downEvents = renderDownEvents(
-                    aff, stroke, resolution, moveDistance);
-            int beginTime = downEvents.getFirst().timing();
             int releaseTime = (int) Math.round(stroke.endTime());
-            int lastDownTime = downEvents.getLast().timing();
-            if (releaseTime - lastDownTime < TouchStroke.MIN_PRESS_DURATION_MILLIS) {
-                releaseTime = lastDownTime + TouchStroke.MIN_PRESS_DURATION_MILLIS;
-            }
+            List<RenderedEvent> downEvents = renderDownEvents(
+                    aff, stroke, resolution, moveDistance, releaseTime);
+            int beginTime = downEvents.getFirst().timing();
             int id = idManager.getId(beginTime, releaseTime);
             for (RenderedEvent event : downEvents) {
                 result.add(new SimpleAction(
@@ -58,13 +54,27 @@ public final class TouchStrokeRenderer {
         return List.copyOf(result);
     }
 
+    /** 在计划抬起之前完成位置采样；必要锚点与 UP 冲突时报告，不延后释放。 */
     private List<RenderedEvent> renderDownEvents(Aff aff, TouchStroke stroke,
-                                                  Resolution resolution, double moveDistance) {
-        List<TouchAnchor> anchors = new ArrayList<>(stroke.anchors());
+                                               Resolution resolution, double moveDistance,
+                                               int releaseTime) {
+        // 取仍能舍入到 UP 前一毫秒的最晚时刻，避免 4K/6K 投影变化在 UP 同刻补出 MOVE。
+        double lastTime = Math.nextDown(releaseTime - 0.5);
+        AffPoint lastPosition = stroke.positionAt(lastTime);
+        List<TouchAnchor> anchors = new ArrayList<>();
+        for (TouchAnchor anchor : stroke.anchors()) {
+            if (anchor.time() <= lastTime) {
+                anchors.add(anchor);
+            } else if (anchor.required() && !anchor.position().samePosition(lastPosition)) {
+                throw new IllegalStateException(
+                        "必要触控位置与计划抬起时刻冲突：" + aff.getAffFile().getAbsolutePath()
+                                + "，timing=" + releaseTime + "，sourceIds=" + stroke.sourceIds());
+            }
+        }
         TouchAnchor lastAnchor = anchors.getLast();
-        if (stroke.endTime() > lastAnchor.time() + 1e-7) {
+        if (lastTime > lastAnchor.time() + 1e-7) {
             anchors.add(new TouchAnchor(
-                    stroke.endTime(), lastAnchor.position(), true, TouchAnchor.Transition.LINEAR));
+                    lastTime, lastPosition, true, TouchAnchor.Transition.LINEAR));
         }
 
         TreeMap<Integer, RenderedEvent> events = new TreeMap<>();

@@ -27,14 +27,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import arc.record.aff.Aff;
 import arc.record.aff.judge.ChartJudgementModel;
-import arc.record.aff.note.Arc;
 import arc.record.aff.note.ArcTap;
 import arc.record.aff.note.Click;
 import arc.record.aff.note.Note;
 import arc.record.record.model.Request;
 import arc.record.record.model.Resolution;
 import arc.record.record.model.SimpleAction;
-import arc.record.record.plan.ArcColorStateMachine;
 import arc.record.record.plan.TouchScheduler;
 import arc.record.record.plan.TouchStroke;
 import arc.record.record.plan.TouchStrokeRenderer;
@@ -148,8 +146,10 @@ public class RecordThreadPool {
             }
         }
 
-        System.out.println("理论值自检汇总：检查 " + checkedNum + " 个谱面变体，通过 "
-                + (checkedNum - failedNum) + "，未通过或未确定 " + failedNum);
+        if (failedNum > 0) {
+            System.out.println("理论值自检：" + checkedNum + " 个谱面变体中，"
+                    + failedNum + " 个未通过或未确定，详见问题报告。");
+        }
         long endTime = System.currentTimeMillis() - startTime;
         String minuteStr = endTime >= 60000 ? " " + (int) (endTime / 60000) + " min" : "";
         endTime %= 60000;
@@ -164,10 +164,11 @@ public class RecordThreadPool {
         return (long) Math.max(1, aff.getNoteCount()) * (requestMap.size() + requestNum);
     }
 
+    /** 统一导出从 1 开始的触点 ID，正文和暂停/继续操作共用同一转换。 */
     private static void add(JSONArray points, SimpleAction action,
                             boolean mirror, Resolution resolution) {
         JSONObject point = new JSONObject();
-        point.put("id", action.id());
+        point.put("id", action.id() + 1);
         point.put("x", mirror ? resolution.getMaxX() - action.x() : action.x());
         point.put("y", action.y());
         point.put("state", action.getState());
@@ -194,6 +195,8 @@ public class RecordThreadPool {
         int processedNum = 0;
         int checkedNum = 0;
         int failedNum = 0;
+        TouchScheduler scheduler = new TouchScheduler();
+        List<TouchStroke> arcTemplates = null;
         for (int key : requestKeys) {
             int miss = key / (aff.getNoteCount() + 1);
             int noShinyPure = key % (aff.getNoteCount() + 1);
@@ -209,12 +212,11 @@ public class RecordThreadPool {
                 }
                 if (miss == 0 && noShinyPure == 0) {
                     // 合法空谱仍生成完整的启动/返回操作，不能从全清单中静默消失。
-                    ChartJudgementModel model = ChartJudgementModel.build(aff, noteList);
                     Map<RecordVariant, RecordCandidate> candidates = new HashMap<>();
                     for (Request request : requests) {
                         RecordVariant variant = new RecordVariant(request.resolution(), request.mirror());
                         RecordCandidate candidate = candidates.computeIfAbsent(variant, ignored ->
-                                verifyTheoreticalRecord(aff, model,
+                                verifyTheoreticalRecord(aff,
                                         buildRecordJson(aff, List.of(), 0, 0, request), request, List.of()));
                         recordFiles.add(writeRecord(aff, 0, 0, request, request.targetDir(), candidate.json()));
                     }
@@ -224,7 +226,9 @@ public class RecordThreadPool {
                 }
             } else {
                 ChartJudgementModel judgementModel = ChartJudgementModel.build(aff, noteList);
-                List<TouchStroke> strokes = new TouchScheduler().schedule(aff, judgementModel);
+                // modifyMP只调整普通点击；同一文件的长键路径模板求解一次，接线时复制可变状态。
+                if (arcTemplates == null) arcTemplates = scheduler.planArcs(aff, judgementModel);
+                List<TouchStroke> strokes = scheduler.schedule(aff, judgementModel, arcTemplates);
                 if (DEBUG_MODE) {
                     saveStrokes(strokes, new File(debugDir, "touch-strokes.txt"));
                 }
@@ -242,7 +246,7 @@ public class RecordThreadPool {
                                 ignored -> {
                                     String json = buildRecordJson(aff, actions, miss, noShinyPure, request);
                                     return miss == 0 && noShinyPure == 0
-                                            ? verifyTheoreticalRecord(aff, judgementModel, json, request, strokes)
+                                            ? verifyTheoreticalRecord(aff, json, request, strokes)
                                             : new RecordCandidate(json, null);
                                 });
                         String json = candidate.json();
@@ -268,74 +272,29 @@ public class RecordThreadPool {
     }
 
     /**
-     * 回放最终理论值候选，将不可靠的低操作量路径逐组替换为完整跟踪。
-     * 累计来源并比较两种空闲触点策略；相同JSON不重复回放，不可改善时报告后继续批次。
+     * 独立检查最终理论值 JSON；自检只报告结果，不改变生成方案。
+     * 通过时保持安静，未通过或未确定时保存完整证据并输出一条问题摘要。
      *
      * @param aff 未修改的原谱
-     * @param model 当前理论值的只读判定需求
-     * @param json 最终整数事件和镜像已经写入的候选
+     * @param json 已完成整数坐标和镜像处理的最终脚本
      * @param request 当前输出投影与镜像要求
      * @param strokes 仅随反例保存生成意图，不传入正向回放器
-     * @return 最终候选与真实回放结果，失败不伪装为通过
+     * @return 原始 JSON 与真实回放结果，失败不伪装为通过
      */
     private RecordCandidate verifyTheoreticalRecord(
-            Aff aff, ChartJudgementModel model, String json, Request request, List<TouchStroke> strokes) {
-        Set<Integer> tracked = new HashSet<>();
-        Set<String> seen = new HashSet<>();
-        seen.add(json);
-        boolean splitIdle = true;
-        int attempts = 0;
-        long elapsed = 0;
-        while (true) {
-            if (Thread.currentThread().isInterrupted()) {
-                throw new java.util.concurrent.CancellationException("理论值候选规划已取消");
-            }
-            ReplayReport report = new ForwardReplay().verify(aff, json,
-                    new ReplayContext(request.resolution(), request.mirror(), FIRST_NOTE_TIME + CLICK_TIME));
-            attempts++;
-            elapsed += report.cases().stream().mapToLong(result -> result.stats().elapsedMillis()).sum();
-            if (report.status() == ReplayReport.Status.PASS) {
-                int peak = report.cases().stream().mapToInt(result -> result.stats().peakStates()).max().orElse(0);
-                System.out.println("理论值自检通过：" + aff.getSongName() + "_" + aff.getDiffStr()
-                        + (request.mirror() ? "_镜像" : "_原版") + "，0/-10/+10 ms，峰值状态="
-                        + peak + "，候选数=" + attempts + "，回放用时=" + elapsed + " ms");
-                return new RecordCandidate(json, report);
-            }
-            Path directory = saveReplayFailure(aff, json, report, strokes);
-            boolean expanded = tracked.addAll(trackedFallbackSources(aff, report, strokes));
-            if (report.status() == ReplayReport.Status.FAIL && !tracked.isEmpty() && (expanded || splitIdle)) {
-                if (!expanded) splitIdle = false;
-                String next = null;
-                while (true) {
-                    try {
-                        List<TouchStroke> fallback = new TouchScheduler()
-                                .scheduleTrackedFallback(aff, model, tracked, splitIdle);
-                        List<SimpleAction> actions = new TouchStrokeRenderer().render(aff, fallback, request.resolution());
-                        String candidate = buildRecordJson(aff, actions, 0, 0, request);
-                        if (seen.add(candidate)) {
-                            next = candidate;
-                            strokes = fallback;
-                            break;
-                        }
-                    } catch (ArcColorStateMachine.UnsatisfiedColorException | TouchScheduler.UnsatisfiedWindowException e) {
-                        System.out.println("跳过不可行的重规划候选：" + e.getMessage());
-                    }
-                    if (!splitIdle) break;
-                    splitIdle = false;
-                }
-                if (next != null) {
-                    System.out.println("调整未通过的低操作候选：" + aff.getSongName()
-                            + "，完整跟踪来源数=" + tracked.size()
-                            + (splitIdle ? "，拆开空闲区间" : "，保留组内持续触点")
-                            + "，反例=" + directory.toAbsolutePath());
-                    json = next;
-                    continue;
-                }
-            }
-            System.out.println("理论值自检未通过，继续生成：" + aff.getAffFile().getAbsolutePath()
-                    + "，诊断=" + directory.toAbsolutePath() + "\n" + replaySummary(report));
-            return new RecordCandidate(json, report);
+            Aff aff, String json, Request request, List<TouchStroke> strokes) {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new java.util.concurrent.CancellationException("理论值自检已取消");
         }
+        ReplayReport report = new ForwardReplay().verify(aff, json,
+                new ReplayContext(request.resolution(), request.mirror(), FIRST_NOTE_TIME + CLICK_TIME));
+        if (report.status() != ReplayReport.Status.PASS) {
+            Path directory = saveReplayFailure(aff, json, report, strokes);
+            System.out.println("理论值自检" + (report.status() == ReplayReport.Status.FAIL ? "失败：" : "未确定：")
+                    + aff.getSongName() + "_" + aff.getDiffStr() + (request.mirror() ? "_镜像" : "_原版")
+                    + "，" + replaySummary(report) + "，诊断=" + directory.toAbsolutePath());
+        }
+        return new RecordCandidate(json, report);
     }
 
     /** 保存失败候选及偏移反例，未知 I/O 错误仍显式报告。 */
@@ -375,51 +334,11 @@ public class RecordThreadPool {
     /** 每个偏移独立列出，不以最终生成成功覆盖失败结论。 */
     private String replaySummary(ReplayReport report) {
         return report.cases().stream()
+                .filter(result -> result.status() != ReplayReport.Status.PASS)
                 .map(result -> result.offsetMillis() + " ms=" + result.status()
                         + (result.failure() == null ? "" : "@" + result.failure().timing()
                         + "，sourceIds=" + result.failure().sourceIds() + "，" + result.failure().reason()))
-                .collect(java.util.stream.Collectors.joining("\n"));
-    }
-
-    /**
-     * 收集失败 Arc、反例染色/释放历史的来源及失败时刻活动 Arc，覆盖冷却和提前点击。
-     *
-     * @param aff 原谱和实体 Arc 身份
-     * @param report 独立回放的不可变反例，不会改写本次回放结果
-     * @param strokes 仅用于把真实反例时刻关联到待改进的生成路径，不作为判定证据
-     * @return 可累计的局部完整跟踪来源集合；未确定结果不自动重规划
-     */
-    private Set<Integer> trackedFallbackSources(Aff aff, ReplayReport report, List<TouchStroke> strokes) {
-        if (report.status() != ReplayReport.Status.FAIL) {
-            return Set.of();
-        }
-        Set<Integer> failed = report.cases().stream()
-                .filter(result -> result.failure() != null)
-                .flatMap(result -> result.failure().sourceIds().stream())
-                .collect(java.util.stream.Collectors.toSet());
-        List<Double> failureTimes = report.cases().stream()
-                .filter(result -> result.failure() != null)
-                .map(result -> result.failure().timing()).toList();
-        for (ReplayReport.CaseResult result : report.cases()) {
-            if (result.failure() == null) continue;
-            double time = result.failure().timing();
-            for (TouchStroke stroke : strokes) {
-                if (stroke.startTime() <= time + 10 && stroke.endTime() >= time - 1010)
-                    failed.addAll(stroke.sourceIds());
-            }
-            result.failure().history().stream()
-                    .filter(event -> event.event().equals("DYE"))
-                    .forEach(event -> failed.add(event.sourceId()));
-        }
-        List<Arc> failedArcs = aff.getArcList().stream()
-                .filter(arc -> failed.contains(arc.getSourceId())).toList();
-        return aff.getArcList().stream()
-                .filter(arc -> failedArcs.stream().anyMatch(other ->
-                        arc.getT1() <= other.getT2() && other.getT1() <= arc.getT2())
-                        || failureTimes.stream().anyMatch(time -> arc.getT1() <= time + 10
-                        && arc.getT2() >= time - 10))
-                .map(Arc::getSourceId)
-                .collect(java.util.stream.Collectors.toSet());
+                .collect(java.util.stream.Collectors.joining("；"));
     }
 
     /** 一个唯一输出变体及其最终校验结果，非理论值变体的 report 为 null。 */

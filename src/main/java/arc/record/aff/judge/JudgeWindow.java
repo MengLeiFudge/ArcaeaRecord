@@ -49,8 +49,8 @@ public final class JudgeWindow {
     /**
      * 计算窗口在指定时刻用于生成候选的中心位置。
      *
-     * <p>连接追加的 Arc 头判固定为来源 Arc 的头坐标；普通 Arc 返回实际时刻的
-     * 曲线中心，最终覆盖由移动判定矩形决定。</p>
+     * <p>Arc 的追加头判与普通持续判定都使用当前曲线中心；追加点只定义名义时间与窗口。
+     * 零时长物理连接入口由调度器单独保留，不把整段窗口固定在蛇头位置。</p>
      *
      * @param time 窗口内谱面时间，单位为毫秒
      * @return AFF 坐标
@@ -61,10 +61,7 @@ public final class JudgeWindow {
         }
         Note source = point.source();
         if (source instanceof Arc arc) {
-            double positionTime = point.kind() == JudgePoint.Kind.ARC_HEAD
-                    ? arc.getT1()
-                    : time;
-            double[] xy = arc.getAffPoint(positionTime);
+            double[] xy = arc.getAffPoint(time);
             return new AffPoint(xy[0], xy[1]);
         }
         if (source instanceof Hold hold) {
@@ -77,34 +74,48 @@ public final class JudgeWindow {
     /**
      * 查找指定触点在窗口内首次覆盖来源物件的时刻。
      *
-     * <p>Hold 和连接追加头判要求精确坐标；普通 Arc 使用随曲线中心移动的矩形范围。</p>
+     * <p>Hold 保留规划轨道中心；所有 Arc 均使用随当前曲线中心移动的矩形范围。</p>
      *
      * @param position  希望保持的触点位置
      * @param notBefore 不早于该时刻寻找，单位为毫秒
      * @return 存在覆盖机会时返回对应的最早时刻
      */
     public OptionalDouble firstTimeAt(AffPoint position, double notBefore) {
+        return firstTimeAt(position, notBefore, 0, 0);
+    }
+
+    /** 在原时间窗口内寻找保留空间余量的命中机会，供窗口规划选择可可靠输出的位置。 */
+    public OptionalDouble firstTimeAt(AffPoint position, double notBefore, double xMargin, double yMargin) {
         double from = Math.max(startTime, notBefore);
         if (from > endTime + 1e-7) {
             return OptionalDouble.empty();
         }
         Note source = point.source();
-        if (source instanceof Hold || point.kind() == JudgePoint.Kind.ARC_HEAD) {
+        if (source instanceof Hold) {
             return positionAt(from).samePosition(position)
                     ? OptionalDouble.of(from)
                     : OptionalDouble.empty();
         }
         AffPoint fromPoint = positionAt(from);
-        if (ArcJudgementRange.covers(fromPoint, position)) {
+        if (ArcJudgementRange.covers(fromPoint, position, xMargin, yMargin)) {
             return OptionalDouble.of(from);
         }
 
+        // Arc各轴在本窗口内单调；整个包围矩形都够不到时，无须执行采样、三分和二分搜索。
+        AffPoint endPoint = positionAt(endTime);
+        AffPoint nearest = new AffPoint(
+                Math.clamp(position.x(), Math.min(fromPoint.x(), endPoint.x()), Math.max(fromPoint.x(), endPoint.x())),
+                Math.clamp(position.y(), Math.min(fromPoint.y(), endPoint.y()), Math.max(fromPoint.y(), endPoint.y())));
+        if (ArcJudgementRange.distanceSquared(nearest, position, xMargin, yMargin) > POSITION_EPSILON_SQUARED) {
+            return OptionalDouble.empty();
+        }
+
         double span = endTime - from;
-        double bestDistance = ArcJudgementRange.distanceSquared(fromPoint, position);
+        double bestDistance = ArcJudgementRange.distanceSquared(fromPoint, position, xMargin, yMargin);
         int bestIndex = 0;
         for (int i = 1; i <= SEARCH_SEGMENTS; i++) {
             double time = from + span * i / SEARCH_SEGMENTS;
-            double distance = ArcJudgementRange.distanceSquared(positionAt(time), position);
+            double distance = ArcJudgementRange.distanceSquared(positionAt(time), position, xMargin, yMargin);
             if (distance < bestDistance) {
                 bestDistance = distance;
                 bestIndex = i;
@@ -115,8 +126,8 @@ public final class JudgeWindow {
         for (int i = 0; i < SEARCH_ITERATIONS; i++) {
             double first = left + (right - left) / 3.0;
             double second = right - (right - left) / 3.0;
-            if (ArcJudgementRange.distanceSquared(positionAt(first), position)
-                    <= ArcJudgementRange.distanceSquared(positionAt(second), position)) {
+            if (ArcJudgementRange.distanceSquared(positionAt(first), position, xMargin, yMargin)
+                    <= ArcJudgementRange.distanceSquared(positionAt(second), position, xMargin, yMargin)) {
                 right = second;
             } else {
                 left = first;
@@ -124,7 +135,7 @@ public final class JudgeWindow {
         }
         double refinedTime = (left + right) / 2.0;
         double refinedDistance = ArcJudgementRange.distanceSquared(
-                positionAt(refinedTime), position);
+                positionAt(refinedTime), position, xMargin, yMargin);
         if (refinedDistance > POSITION_EPSILON_SQUARED) {
             return OptionalDouble.empty();
         }
@@ -134,7 +145,7 @@ public final class JudgeWindow {
         right = refinedTime;
         for (int i = 0; i < SEARCH_ITERATIONS; i++) {
             double middle = (left + right) / 2.0;
-            if (ArcJudgementRange.distanceSquared(positionAt(middle), position)
+            if (ArcJudgementRange.distanceSquared(positionAt(middle), position, xMargin, yMargin)
                     <= POSITION_EPSILON_SQUARED) {
                 right = middle;
             } else {

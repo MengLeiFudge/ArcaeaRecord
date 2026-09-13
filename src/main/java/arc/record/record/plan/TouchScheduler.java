@@ -2,7 +2,9 @@ package arc.record.record.plan;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -27,8 +29,10 @@ import arc.record.aff.note.ArcTap;
 import arc.record.aff.note.Click;
 import arc.record.aff.note.Hold;
 import arc.record.aff.note.Note;
+import arc.record.record.model.Resolution;
 
 import static arc.record.Settings.TOUCH_SAMPLE_FREQUENCY;
+import static arc.record.Settings.TOUCH_MOVE_DISTANCE_RATIO;
 
 /**
  * 将全部普通点击和长键窗口分配为连续触控段落。
@@ -40,6 +44,13 @@ public final class TouchScheduler {
     private static final double CONTINUATION_GAP_MILLIS = 100.0;
     private static final double TIME_EPSILON = 1e-7;
     private static final double PATH_TIME_EPSILON = 1e-6;
+    /** 覆盖16:9全部屏幕及4K/6K投影下的距离采样误差，单位为AFF坐标；实际判定矩形不变。 */
+    private static final double X_MARGIN = Math.max(0.002, 4 * TOUCH_MOVE_DISTANCE_RATIO);
+    private static final double Y_MARGIN = Math.max(0.002, 5 * TOUCH_MOVE_DISTANCE_RATIO);
+    /** 命中后保留10 ms提前偏移及3 ms稳定覆盖，再移向下个不同位置；原判定窗口不延长。 */
+    private static final double WINDOW_HOLD_MILLIS = 13;
+    /** 四种颜色位之外，标记该路径仍存在尚未染色的合法可能。 */
+    private static final int UNBOUND_COLOR = 1 << 4;
 
     /**
      * 生成与输出分辨率无关的连续触控方案。
@@ -49,56 +60,52 @@ public final class TouchScheduler {
      * @return 按开始时间排序的连续触控段落
      */
     public List<TouchStroke> schedule(Aff aff, ChartJudgementModel model) {
-        return schedule(aff, model, Set.of(), true);
+        return schedule(aff, model, planArcs(aff, model));
     }
 
     /**
-     * 对独立回放发现风险的 Arc 时段保留完整跟踪，其他时段仍比较低操作量候选。
+     * 求解不随普通点击Miss/小Pure调整而变化的Arc路径，结果可在同一谱面的这些变体间复用。
      *
-     * @param aff 原始谱面
-     * @param model 本次生成的判定需求
-     * @param trackedSources 需要优先保留完整跟踪的来源身份，不改变判定规则
-     * @return 供最终 JSON 独立重新验收的另一份候选
+     * @param aff 原始谱面及输入拓扑
+     * @param model 包含本谱面全部原始长键需求的模型
+     * @return 尚未接入Hold或普通点击的Arc路径模板，调用方不得修改
      */
-    public List<TouchStroke> scheduleTrackedFallback(
-            Aff aff, ChartJudgementModel model, Set<Integer> trackedSources) {
-        return scheduleTrackedFallback(aff, model, trackedSources, true);
-    }
-
-    /** 比较风险组拆开空闲区间或保留整段颜色生命周期的两种候选。 */
-    public List<TouchStroke> scheduleTrackedFallback(
-            Aff aff, ChartJudgementModel model, Set<Integer> trackedSources, boolean splitIdle) {
-        return schedule(aff, model, Set.copyOf(trackedSources), splitIdle);
-    }
-
-    /** 一次规划内部的候选偏好，不引入用户模式或修改谱面。 */
-    private List<TouchStroke> schedule(
-            Aff aff, ChartJudgementModel model, Set<Integer> trackedSources, boolean splitIdle) {
+    public List<TouchStroke> planArcs(Aff aff, ChartJudgementModel model) {
         List<TouchStroke> strokes = new ArrayList<>();
-        List<LongNoteDemand> arcDemands = new ArrayList<>();
-        for (LongNoteDemand demand : model.longNoteDemands()) {
-            if (demand.source() instanceof Hold hold) {
-                strokes.add(planHold(hold, demand));
-            } else {
-                arcDemands.add(demand);
-            }
-        }
+        List<LongNoteDemand> arcDemands = model.longNoteDemands().stream()
+                .filter(demand -> demand.source() instanceof Arc).toList();
         List<List<LongNoteDemand>> groups = groupArcDemands(aff, arcDemands);
-        Set<Integer> tracked = new LinkedHashSet<>(trackedSources);
-        splitUntrackableGroups(aff, groups, tracked, splitIdle);
-        List<ColorClearEvidence> clear = tracked.isEmpty()
-                ? List.of() : colorClearEvidence(aff.getArcList());
+        List<ColorClearEvidence> clear = colorClearEvidence(aff.getArcList(), false);
+        // 分组准入已经求出了可行路径，同一调度过程直接复用，不再重算所有候选。
+        Map<List<LongNoteDemand>, TouchStroke> planned = new IdentityHashMap<>();
+        splitUntrackableGroups(aff, groups, clear, planned);
         for (List<LongNoteDemand> demands : groups) {
-            boolean preferTracked = demands.stream()
-                    .anyMatch(demand -> tracked.contains(demand.source().getSourceId()));
-            strokes.add(planArcGroup(aff, demands, preferTracked, clear));
+            TouchStroke stroke = planned.get(demands);
+            strokes.add(stroke == null ? planArcGroup(aff, demands, clear) : stroke);
         }
-        mergeCoveredArcStrokes(strokes, tracked);
-        mergeFragmentStrokes(strokes, tracked);
-        mergeCompatibleHoldAndArcStrokes(aff, strokes, tracked);
-        avoidCompetingHoldPositions(aff, strokes, tracked);
-        addOrdinaryPresses(aff, model.pressDemands(), strokes, tracked);
-        trimTrailingPresses(aff, strokes, tracked);
+        mergeCoveredArcStrokes(aff, strokes, clear);
+        mergeFragmentStrokes(aff, strokes, clear);
+        return List.copyOf(strokes);
+    }
+
+    /**
+     * 复制Arc模板后接入当前分数版本的Hold和普通点击，各版本拥有独立可变触控状态。
+     *
+     * @param aff 与模板相同的原始谱面
+     * @param model 仅普通点击发生Miss/小Pure调整的当前需求
+     * @param arcs 由同一原谱planArcs生成、长键需求保持相同的模板
+     * @return 当前版本完整的按下至抬起路径
+     */
+    public List<TouchStroke> schedule(Aff aff, ChartJudgementModel model, List<TouchStroke> arcs) {
+        List<TouchStroke> strokes = new ArrayList<>();
+        for (LongNoteDemand demand : model.longNoteDemands()) {
+            if (demand.source() instanceof Hold hold) strokes.add(planHold(hold, demand));
+        }
+        for (TouchStroke arc : arcs) strokes.add(new TouchStroke(arc));
+        mergeCompatibleHoldAndArcStrokes(aff, strokes);
+        avoidCompetingHoldPositions(aff, strokes);
+        addOrdinaryPresses(aff, model.pressDemands(), strokes);
+        trimTrailingPresses(aff, strokes);
         Set<Integer> inputArcIds = strokes.stream()
                 .flatMap(stroke -> stroke.arcColorContacts().stream())
                 .map(contact -> contact.source().getSourceId())
@@ -161,16 +168,29 @@ public final class TouchScheduler {
     }
 
     /**
-     * 颜色分组无法连续跟踪且已被正向回放否决时，按可共同覆盖的物理路径重新分配。
-     * 拓扑分量只定义判定身份，不能强制左右两条不兼容路径使用同一次触控。
+     * 窗口路径和连续跟踪都不能覆盖颜色分组时，按可共同覆盖的物理路径重新分配。
+     * 同色短蛇可在各自窗口中轮流接住，不能仅因不能同时贴线就拆成抢同一颜色的多个触点。
      */
-    private static void splitUntrackableGroups(
-            Aff aff, List<List<LongNoteDemand>> groups, Set<Integer> tracked, boolean splitIdle) {
+    private void splitUntrackableGroups(
+            Aff aff, List<List<LongNoteDemand>> groups, List<ColorClearEvidence> clear,
+            Map<List<LongNoteDemand>, TouchStroke> planned) {
         List<LongNoteDemand> pending = new ArrayList<>();
         groups.removeIf(group -> {
-            if (group.stream().noneMatch(demand -> tracked.contains(demand.source().getSourceId()))
-                    || canTrackTogether(aff, arcsOf(group)) && (!splitIdle || !hasArcGap(arcsOf(group)))) {
-                return false;
+            List<Arc> arcs = arcsOf(group);
+            boolean idle = false;
+            for (int i = 1; i < arcs.size(); i++) {
+                if (canReleaseBetween(aff, arcs.subList(0, i), arcs.get(i), clear)) {
+                    idle = true;
+                    break;
+                }
+            }
+            if (!idle) {
+                try {
+                    planned.put(group, planArcGroup(aff, group, clear));
+                    return false;
+                } catch (UnsatisfiedWindowException | ArcColorStateMachine.UnsatisfiedColorException e) {
+                    // 两种组内路径均不满足规划约束，接下来分配物理路径；不消费回放结果。
+                }
             }
             pending.addAll(group);
             return true;
@@ -182,11 +202,12 @@ public final class TouchScheduler {
             List<LongNoteDemand> best = null;
             double bestDistance = Double.POSITIVE_INFINITY;
             for (List<LongNoteDemand> path : paths) {
+                // 已被完整窗口/颜色约束拒绝的组合按颜色拆开，不在物理分配阶段重新合回同一混色组。
+                if (path.getFirst().color() != demand.color()) continue;
                 List<Arc> combined = new ArrayList<>(arcsOf(path));
                 combined.add(next);
                 if (!canTrackTogether(aff, combined) || !canColorTrackTogether(combined)
-                        || next.getT1() >= path.stream().mapToInt(item -> item.source().getT2()).max().orElseThrow()
-                        + CONTINUATION_GAP_MILLIS) {
+                        || canReleaseBetween(aff, arcsOf(path), next, clear)) {
                     continue;
                 }
                 Arc previous = (Arc) path.getLast().source();
@@ -203,30 +224,32 @@ public final class TouchScheduler {
                 paths.add(best);
             }
             best.add(demand);
-            tracked.add(next.getSourceId());
         }
         groups.addAll(paths);
         groups.sort(Comparator.comparingInt(group -> group.getFirst().source().getT1()));
     }
 
-    /** 风险路径内至少100 ms无实际Arc时，可另试释放空闲触点的候选。 */
-    private static boolean hasArcGap(List<Arc> arcs) {
-        int until = arcs.getFirst().getT2();
-        for (Arc arc : arcs) {
-            if (arc.getT1() - until >= CONTINUATION_GAP_MILLIS) return true;
-            until = Math.max(until, arc.getT2());
-        }
-        return false;
+    /** 空闲段只有在后继不受释放冷却影响时才拆开，保留相连短蛇的一次完整按下。 */
+    private static boolean canReleaseBetween(
+            Aff aff, List<Arc> previous, Arc next, List<ColorClearEvidence> clear) {
+        double end = previous.stream().mapToInt(Arc::getT2).max().orElseThrow();
+        if (next.getT1() - end < CONTINUATION_GAP_MILLIS) return false;
+        double componentEnd = previous.stream().flatMap(arc -> aff.getArcTopology()
+                        .component(aff.getArcTopology().componentIdOf(arc.getSourceId())).stream())
+                .mapToInt(Arc::getT2).max().orElseThrow();
+        // 组结束解除冷却；否则须覆盖1000 ms冷却、25 ms移动拖尾、10 ms时移和1 ms边界。
+        return componentEnd < next.getT1() - 10 || next.getT1() - end >= 1036
+                || clear.stream().anyMatch(interval -> interval.startTime() <= end - 10
+                && interval.graceEnd() >= end + 35);
     }
 
     /**
      * 若一条既有低位移路径能原样覆盖另一组的全部窗口和颜色接触，删除冗余触点。
      * 尝试失败不修改任一 Stroke，因而左右不兼容主路径仍保持独立。
      */
-    private static void mergeCoveredArcStrokes(List<TouchStroke> strokes, Set<Integer> trackedSources) {
+    private void mergeCoveredArcStrokes(Aff aff, List<TouchStroke> strokes, List<ColorClearEvidence> clear) {
         List<TouchStroke> arcs = new ArrayList<>(strokes.stream()
                 .filter(stroke -> stroke.kind() == TouchStroke.Kind.ARC)
-                .filter(stroke -> stroke.sourceIds().stream().noneMatch(trackedSources::contains))
                 .toList());
         for (int i = arcs.size() - 1; i >= 0; i--) {
             TouchStroke first = arcs.get(i);
@@ -244,7 +267,14 @@ public final class TouchScheduler {
                 TouchStroke other = preferred == first ? second : first;
                 if (!absorbCoveredArcStroke(preferred, other)) {
                     if (!absorbCoveredArcStroke(other, preferred)) {
-                        continue;
+                        TouchStroke shared = lowerCost(
+                                shareWindowPath(aff, preferred, other, clear),
+                                shareWindowPath(aff, other, preferred, clear));
+                        if (shared == null) continue;
+                        strokes.remove(first);
+                        strokes.remove(second);
+                        strokes.add(shared);
+                        break;
                     }
                     TouchStroke swap = preferred;
                     preferred = other;
@@ -254,6 +284,38 @@ public final class TouchScheduler {
                 break;
             }
         }
+    }
+
+    /** 从原路径起点共同求解两组窗口，减少完整按下次数，同时不增加两条原路径的总移动。 */
+    private TouchStroke shareWindowPath(
+            Aff aff, TouchStroke base, TouchStroke other, List<ColorClearEvidence> clear) {
+        if (base.startTime() > other.startTime() || base.endTime() < other.endTime()) return null;
+        List<Arc> all = java.util.stream.Stream.concat(base.arcColorContacts().stream(), other.arcColorContacts().stream())
+                .map(TouchStroke.ArcColorContact::source).distinct()
+                .sorted(Comparator.comparingInt(Arc::getT1).thenComparingInt(Arc::getSourceId)).toList();
+        List<Arc> arcs = all.stream().filter(arc -> arc.getT2() > arc.getT1()).toList();
+        boolean bridge = base.arcColorContacts().stream().anyMatch(a -> other.arcColorContacts().stream()
+                .anyMatch(b -> a.source().getColor() != b.source().getColor()
+                        && !ArcColorStateMachine.colorBridgeIntervals(a.source(), b.source()).isEmpty()));
+        if (!bridge || !hasCompatibleConnectionEntry(aff, arcs)) return null;
+        List<CoverageDemand> windows = java.util.stream.Stream.concat(
+                        base.hitOpportunities().stream(), other.hitOpportunities().stream())
+                .map(HitOpportunity::demand).distinct()
+                .sorted(Comparator.comparingDouble((CoverageDemand demand) -> demand.window().endTime())
+                        .thenComparingDouble(demand -> demand.window().startTime())
+                        .thenComparingInt(demand -> demand.point().id())).toList();
+        ArcGroupPlan plan = new ArcGroupPlan(aff, arcs,
+                all.stream().filter(arc -> arc.getT2() == arc.getT1()).toList(), windows,
+                findConnectionEntry(aff, arcs), base.startTime(), base.endTime());
+        TouchStroke shared;
+        try {
+            shared = prepareArcCandidate(planWindowArcGroup(plan, base), plan.zeroDurationArcs());
+        } catch (UnsatisfiedWindowException e) {
+            return null;
+        }
+        if (planCost(shared).worldTravel() > planCost(base).worldTravel() + planCost(other).worldTravel() + 1e-9)
+            return null;
+        return ownershipConflict(plan, shared, clear) == null ? shared : null;
     }
 
     private static boolean sameArcColors(TouchStroke first, TouchStroke second) {
@@ -330,7 +392,9 @@ public final class TouchScheduler {
             }
             contacts.add(contact);
         }
-        if (!colorsCanShareTouch(contacts)) {
+        if (!colorsCanShareTouch(contacts)
+                || !coversWithTimingMargin(target, source.hitOpportunities().stream()
+                .map(HitOpportunity::demand).toList())) {
             return false;
         }
 
@@ -356,7 +420,7 @@ public final class TouchScheduler {
                 .sorted(Comparator.comparingDouble(TouchStroke.ArcColorContact::time)
                         .thenComparingInt(contact -> contact.source().getSourceId()))
                 .toList();
-        List<ColorClearEvidence> clears = colorClearEvidence(arcs);
+        List<ColorClearEvidence> clears = colorClearEvidence(arcs, true);
         Integer boundColor = null;
         double graceUntil = Double.NEGATIVE_INFINITY;
         int clearIndex = 0;
@@ -380,15 +444,17 @@ public final class TouchScheduler {
     }
 
     /** 将候选涉及的局部清色区间预计算为按开始时刻排序的事件。 */
-    private static List<ColorClearEvidence> colorClearEvidence(List<Arc> arcs) {
+    private static List<ColorClearEvidence> colorClearEvidence(List<Arc> arcs, boolean bridge) {
         List<ColorClearEvidence> result = new ArrayList<>();
         for (int i = 0; i < arcs.size(); i++) {
             for (int j = i + 1; j < arcs.size(); j++) {
                 if (arcs.get(i).getColor() == arcs.get(j).getColor()) {
                     continue;
                 }
-                for (ArcColorStateMachine.ColorBridgeInterval interval
-                        : ArcColorStateMachine.colorBridgeIntervals(arcs.get(i), arcs.get(j))) {
+                List<ArcColorStateMachine.ColorBridgeInterval> intervals = bridge
+                        ? ArcColorStateMachine.colorBridgeIntervals(arcs.get(i), arcs.get(j))
+                        : ArcColorStateMachine.colorClearIntervals(arcs.get(i), arcs.get(j));
+                for (ArcColorStateMachine.ColorBridgeInterval interval : intervals) {
                     result.add(new ColorClearEvidence(
                             interval.startTime(),
                             interval.endTime() + ArcColorStateMachine.COLOR_GRACE_MILLIS));
@@ -401,11 +467,11 @@ public final class TouchScheduler {
 
     /**
      * 串接已完成空间分组和轨迹规划的同色碎蛇，保留各段零时长入口及判定身份。
+     * 空白间隙内提前移向下一入口，避免晚偏移时触点仍停在上一尾点。
      *
      * @param strokes 包含独立 Arc 路径的触控列表，尚未关联前置 Hold/Tap
-     * @param tracked 回放反例涉及的来源，空白间隙内提前移动以避免晚偏移仍停在上一尾点
      */
-    private static void mergeFragmentStrokes(List<TouchStroke> strokes, Set<Integer> tracked) {
+    private static void mergeFragmentStrokes(Aff aff, List<TouchStroke> strokes, List<ColorClearEvidence> clear) {
         Map<Integer, TouchStroke> previousByColor = new LinkedHashMap<>();
         List<TouchStroke> arcs = strokes.stream()
                 .filter(stroke -> stroke.kind() == TouchStroke.Kind.ARC)
@@ -429,10 +495,33 @@ public final class TouchScheduler {
                     for (TouchAnchor anchor : previous.anchors()) {
                         merged.addAnchor(anchor);
                     }
+                    if (merged.anchors().getLast().time() < end) {
+                        // 窗口路径可能早已命中最后一点；空隙中的移动必须从实际蛇尾开始。
+                        merged.addAnchor(new TouchAnchor(end, previous.positionAt(end), true,
+                                TouchAnchor.Transition.LINEAR));
+                    }
                     List<TouchAnchor> anchors = arc.anchors();
                     TouchAnchor first = anchors.getFirst();
+                    if (gap > 1) {
+                        Set<Integer> own = new LinkedHashSet<>(previous.sourceIds());
+                        own.addAll(arc.sourceIds());
+                        List<Arc> foreign = aff.getArcList().stream()
+                                .filter(source -> !own.contains(source.getSourceId())
+                                        && source.getT1() <= first.time() + 11 && source.getT2() >= end - 11).toList();
+                        AffPoint from = previous.positionAt(end);
+                        List<TouchAnchor> bridge = new ArrayList<>();
+                        boolean detour = false;
+                        for (double time = end + 1; time < first.time(); time++) {
+                            double ratio = (time - end) / (first.time() - end);
+                            AffPoint center = new AffPoint(from.x() + (first.position().x() - from.x()) * ratio,
+                                    from.y() + (first.position().y() - from.y()) * ratio);
+                            AffPoint point = separatedArcPosition(aff, foreign, clear, time, center, false);
+                            detour |= !point.samePosition(center);
+                            bridge.add(new TouchAnchor(time, point, true, TouchAnchor.Transition.STEP));
+                        }
+                        if (detour) bridge.forEach(merged::addAnchor);
+                    }
                     TouchAnchor.Transition transition = gap > 0
-                            && arc.sourceIds().stream().anyMatch(tracked::contains)
                             ? TouchAnchor.Transition.LINEAR : TouchAnchor.Transition.STEP;
                     merged.addAnchor(new TouchAnchor(
                             first.time(), first.position(), first.required(), transition));
@@ -441,6 +530,11 @@ public final class TouchScheduler {
                     }
                     merged.mergeLogicalDemands(previous);
                     merged.mergeLogicalDemands(arc);
+                    if (!coversWithTimingMargin(merged, merged.hitOpportunities().stream()
+                            .map(HitOpportunity::demand).toList())) {
+                        previousByColor.put(color, arc);
+                        continue;
+                    }
                     strokes.remove(previous);
                     strokes.remove(arc);
                     strokes.add(merged);
@@ -629,9 +723,10 @@ public final class TouchScheduler {
     private static PlanCost planCost(TouchStroke stroke) {
         int moves = 0;
         double travel = 0;
-        TouchAnchor previous = stroke.anchors().getFirst();
-        for (int i = 1; i < stroke.anchors().size(); i++) {
-            TouchAnchor current = stroke.anchors().get(i);
+        List<TouchAnchor> anchors = stroke.anchors();
+        TouchAnchor previous = anchors.getFirst();
+        for (int i = 1; i < anchors.size(); i++) {
+            TouchAnchor current = anchors.get(i);
             if (!previous.position().samePosition(current.position())) {
                 moves++;
                 travel += Math.sqrt(ArcColorStateMachine.worldDistanceSquared(
@@ -701,18 +796,14 @@ public final class TouchScheduler {
     }
 
     private TouchStroke planArcGroup(
-            Aff aff, List<LongNoteDemand> demands, boolean preferTracked, List<ColorClearEvidence> clear) {
+            Aff aff, List<LongNoteDemand> demands, List<ColorClearEvidence> clear) {
         List<Arc> arcs = arcsOf(demands);
         List<Arc> zeroDurationArcs = relatedZeroDurationArcs(aff, arcs);
         ConnectionEntry connectionEntry = findConnectionEntry(aff, arcs);
         double startTime = connectionEntry == null
                 ? arcs.stream().mapToInt(Arc::getT1).min().orElseThrow()
                 : connectionEntry.time();
-        double endTime = preferTracked
-                ? java.util.stream.Stream.concat(arcs.stream(), zeroDurationArcs.stream())
-                .mapToInt(Arc::getT2).max().orElseThrow()
-                : demands.stream()
-                .flatMap(demand -> aff.getArcTopology().component(demand.componentId()).stream())
+        double endTime = java.util.stream.Stream.concat(arcs.stream(), zeroDurationArcs.stream())
                 .mapToInt(Arc::getT2).max().orElseThrow();
         List<CoverageDemand> windows = demands.stream()
                 .flatMap(demand -> demand.demands().stream())
@@ -723,21 +814,25 @@ public final class TouchScheduler {
                 .toList();
         ArcGroupPlan plan = new ArcGroupPlan(
                 aff, arcs, zeroDurationArcs, windows, connectionEntry, startTime, endTime);
+        TouchStroke centered = prepareArcCandidate(
+                planTrackedArcGroup(plan, false, clear), plan.zeroDurationArcs());
         TouchStroke tracked = prepareArcCandidate(
-                planTrackedArcGroup(plan, preferTracked, clear), plan.zeroDurationArcs());
-        if (preferTracked && tracked != null) {
-            return tracked;
-        }
+                planTrackedArcGroup(plan, true, clear), plan.zeroDurationArcs());
+        String centeredConflict = centered == null ? "无连续路径" : ownershipConflict(plan, centered, clear);
+        String trackedConflict = tracked == null ? "无避色路径" : ownershipConflict(plan, tracked, clear);
+        if (centeredConflict != null) centered = null;
+        if (trackedConflict != null) tracked = null;
         TouchStroke window;
         UnsatisfiedWindowException windowFailure = null;
         try {
             window = prepareArcCandidate(
-                    planWindowArcGroup(plan), plan.zeroDurationArcs());
+                    planWindowArcGroup(plan, null), plan.zeroDurationArcs());
         } catch (UnsatisfiedWindowException e) {
             windowFailure = e;
             window = null;
         }
-        TouchStroke stroke = lowerCost(tracked, window);
+        String windowConflict = window == null ? "无窗口路径" : ownershipConflict(plan, window, clear);
+        TouchStroke stroke = lowerCost(lowerCost(centered, tracked), windowConflict == null ? window : null);
         if (stroke != null) {
             return stroke;
         }
@@ -745,11 +840,197 @@ public final class TouchScheduler {
             throw windowFailure;
         }
         throw new ArcColorStateMachine.UnsatisfiedColorException(
-                "Arc 候选违反颜色约束：" + aff.getAffFile().getAbsolutePath()
-                        + "，sourceIds=" + arcs.stream().map(Arc::getSourceId).toList());
+                "无法规划满足窗口与触点约束的 Arc 路径：" + aff.getAffFile().getAbsolutePath()
+                        + "，arcs=" + arcs + "，跟踪=" + centeredConflict
+                        + "，避色=" + trackedConflict + "，窗口=" + windowConflict);
     }
 
-    /** 为单个候选补齐零时长颜色接触，并在参与成本比较前验证颜色合法性。 */
+    /**
+     * 候选必须满足实际窗口、按下时的点击竞争，以及首次接触/清色结束时的颜色唯一性。
+     * 触点已经获得所需颜色后，接近其他颜色不会重新染色；不把整段接近都误判成冲突。
+     */
+    private static String ownershipConflict(
+            ArcGroupPlan plan, TouchStroke stroke, List<ColorClearEvidence> clear) {
+        AffPoint initial = stroke.initialPosition();
+        double ratio = plan.aff().getRatio46k(stroke.startTime());
+        Arc first = plan.arcs().getFirst();
+        boolean head = ArcJudgementRange.covers(pointAt(first, first.getT1()), initial);
+        Set<Integer> ownIds = stroke.sourceIds();
+        boolean continued = plan.aff().getArcList().stream().anyMatch(arc ->
+                !ownIds.contains(arc.getSourceId()) && arc.getColor() == first.getColor()
+                && arc.getT2() <= stroke.startTime()
+                && stroke.startTime() - arc.getT2() < CONTINUATION_GAP_MILLIS);
+        boolean consumesPress = plan.aff().getNoteList().stream().anyMatch(press ->
+                (press instanceof Click || press instanceof ArcTap)
+                        && press.getT1() == stroke.startTime()
+                        && pressEntryIsStable(press, initial, ratio));
+        for (Note press : plan.aff().getNoteList()) {
+            if (!(press instanceof Click || press instanceof ArcTap || press instanceof Hold)) continue;
+            double gap = press.getT1() - stroke.startTime();
+            if (gap > 130 || gap < 0 || !InputJudgementRange.coversPress(press, initial, ratio)) continue;
+            if (!continued && !consumesPress && !(press instanceof Hold)
+                    && gap > (press.getNoteCount() == 0 ? 100 : 25) - 10
+                    || press instanceof Hold && gap == 0 && !head)
+                return "起按会与普通按键竞争，sourceId=" + press.getSourceId() + "，gap=" + gap;
+        }
+        boolean firstInGrace = clear.stream().anyMatch(interval -> interval.startTime() <= first.getT1()
+                && interval.graceEnd() >= first.getT2());
+        if (!head && plan.connectionEntry() == null && !firstInGrace) {
+            for (Note press : plan.aff().getNoteList()) {
+                if (!(press instanceof Click || press instanceof ArcTap || press instanceof Hold)
+                        || press.getT1() > first.getT2() + 10 || press.getT2() < first.getT1() - 10) continue;
+                double[] xy = press.getAffPoint();
+                AffPoint position = new AffPoint(xy[0], xy[1]);
+                AffPoint entry = pointAt(first, first.getT1());
+                if (Math.abs(press.getT1() - first.getT1()) <= CONTINUATION_GAP_MILLIS
+                        && (ArcColorStateMachine.areClose(position, entry)
+                        || pressEntryIsStable(press, entry, ratio))) continue;
+                if (arcContactCount(plan.aff(), List.of(first), press.getT1() - 10, press.getT2() + 10,
+                        position, false) > 0)
+                    return "首次触及音弧晚于竞争按键，sourceId=" + press.getSourceId();
+            }
+        }
+        List<Arc> arcs = plan.aff().getArcList().stream()
+                .filter(arc -> arc.getT1() <= stroke.endTime() + 35
+                        && arc.getT2() >= stroke.startTime() - 11).toList();
+        List<TouchAnchor> anchors = stroke.anchors();
+        List<HitOpportunity> hits = new ArrayList<>();
+        for (int shift : new int[]{-10, 0, 10}) {
+            TreeMap<Double, Integer> bindings = new TreeMap<>();
+            int index = 0;
+            double graceEnd = Double.NEGATIVE_INFINITY;
+            boolean bound = false;
+            int possible = 0;
+            double time = stroke.startTime() + shift;
+            bindings.put(time, 0);
+            while (time <= stroke.endTime() + shift) {
+                while (index < clear.size() && clear.get(index).startTime() <= time) {
+                    graceEnd = Math.max(graceEnd, clear.get(index++).graceEnd());
+                    bound = false;
+                    possible = 0;
+                }
+                if (time <= graceEnd) {
+                    bindings.put(time, -1);
+                    time = Math.nextUp(graceEnd);
+                    bindings.put(time, 0);
+                    continue;
+                }
+                if (bound) {
+                    if (index == clear.size()) break;
+                    time = Math.max(time, clear.get(index).startTime());
+                    continue;
+                }
+                AffPoint point = stroke.positionAt(Math.clamp(time - shift, stroke.startTime(), stroke.endTime()));
+                int colors = 0, owned = 0, borrowed = 0;
+                boolean certain = false;
+                boolean atDown = time == stroke.startTime() + shift
+                        && plan.aff().getRatio46k(time) == plan.aff().getRatio46k(stroke.startTime());
+                boolean precise = atDown || stationaryPosition(plan.aff(), anchors, time - shift, time);
+                double xMargin = precise ? 0.002 : X_MARGIN;
+                double yMargin = precise ? 0.002 : Y_MARGIN;
+                for (Arc arc : arcs) {
+                    if (arc.getT1() > time || arc.getT2() < time) continue;
+                    AffPoint center = pointAt(arc, time);
+                    AffPoint position = InputJudgementRange.skyPosition(point, center.y(), plan.aff().getRatio46k(time));
+                    AffPoint near = new AffPoint(position.x() - Math.clamp(position.x() - center.x(), -xMargin, xMargin),
+                            position.y() - Math.clamp(position.y() - center.y(), -yMargin, yMargin));
+                    if (ArcJudgementRange.covers(center, near)) {
+                        int color = 1 << arc.getColor();
+                        colors |= color;
+                        if (ownIds.contains(arc.getSourceId())) owned |= color;
+                        else borrowed |= color;
+                    }
+                    if (ArcJudgementRange.covers(center, position, xMargin, yMargin)) certain = true;
+                }
+                if (colors != 0) {
+                    if ((borrowed & ~owned) != 0 && time > first.getT2())
+                        return "会占用其他路径的颜色，time=" + time + "，offset=" + shift;
+                    possible |= colors;
+                    // 误差外包只说明可能接触；真正进入内部矩形前仍须保留未染色和后续抢色的可能。
+                    bound = certain;
+                    bindings.put(time, bound ? possible : possible | UNBOUND_COLOR);
+                }
+                time = Math.floor(time) + 1;
+            }
+            CoverageDemand missing = uncoveredAtOffset(plan.aff(), stroke, plan.windows(), shift,
+                    bindings, shift == 0 ? hits : null);
+            if (missing != null) return "持色或空间覆盖不足，offset=" + shift
+                    + "，sourceId=" + missing.point().source().getSourceId()
+                    + "，nominal=" + missing.point().nominalTime();
+        }
+        stroke.replaceArcOpportunities(hits);
+        return null;
+    }
+
+    /**
+     * 在完整窗口中检查路径的时间余量，防止省操作或吸收另一条路径后只剩边界上的瞬时覆盖。
+     * 这里仅约束原谱几何与计划位置；颜色归属和最终整数 JSON 仍由独立回放验收。
+     */
+    private static boolean coversWithTimingMargin(TouchStroke stroke, List<CoverageDemand> demands) {
+        for (int shift : new int[]{-10, 0, 10}) {
+            if (uncoveredAtOffset(null, stroke, demands, shift, null, null) != null) return false;
+        }
+        return true;
+    }
+
+    /**
+     * 检查一次时移下每个原窗口的连续空间覆盖；可额外约束该段路径所有可能的持色结果。
+     * bindings为null时仅检查几何；值-1表示放行，0表示尚未染色，其他值含可能颜色位及未染色标记。
+     * 返回第一个无法覆盖的原需求，全部满足时返回null。
+     */
+    private static CoverageDemand uncoveredAtOffset(
+            Aff aff, TouchStroke stroke, List<CoverageDemand> demands, int shift,
+            TreeMap<Double, Integer> bindings, List<HitOpportunity> hits) {
+        List<TouchAnchor> anchors = stroke.anchors();
+        for (CoverageDemand demand : demands) {
+            if (!(demand.point().source() instanceof Arc arc)) continue;
+            double from = Math.max(demand.window().startTime(), stroke.startTime() + shift);
+            double until = Math.min(demand.window().endTime(), stroke.endTime() + shift);
+            int covered = 0;
+            // 两个相隔1 ms的覆盖时刻排除无法输出的瞬时穿越，空间误差由判定矩形内部余量承担。
+            int required = (int) Math.min(2, Math.floor(until - from) + 1);
+            for (double time = from; time <= until; time++) {
+                Integer colors = bindings == null ? -1 : bindings.floorEntry(time).getValue();
+                if (colors != -1 && colors != (1 << arc.getColor())) {
+                    covered = 0;
+                    continue;
+                }
+                AffPoint center = pointAt(arc, time);
+                AffPoint point = stroke.positionAt(Math.clamp(time - shift, stroke.startTime(), stroke.endTime()));
+                // 必需坐标稳定输出后只剩整数误差，移动段还须容纳距离采样误差。
+                boolean precise = stationaryPosition(aff, anchors, time - shift, time);
+                covered = ArcJudgementRange.covers(center, point, precise ? 0.002 : X_MARGIN,
+                        precise ? 0.002 : Y_MARGIN) ? covered + 1 : 0;
+                if (covered >= required) {
+                    if (hits != null) {
+                        double hit = time - covered + 1;
+                        hits.add(new HitOpportunity(demand, hit, stroke.positionAt(hit - shift)));
+                    }
+                    break;
+                }
+            }
+            if (required <= 0 || covered < required) return demand;
+        }
+        return null;
+    }
+
+    /** 必需锚点已落入整数输出，且当前位置及4K/6K投影保持稳定时，不存在移动抽样误差。 */
+    private static boolean stationaryPosition(Aff aff, List<TouchAnchor> anchors, double time, double chartTime) {
+        if (aff == null) return false;
+        int index = Collections.binarySearch(anchors, new TouchAnchor(time, anchors.getFirst().position()),
+                Comparator.comparingDouble(TouchAnchor::time));
+        if (index < 0) index = -index - 2;
+        if (index < 0) return false;
+        TouchAnchor from = anchors.get(index);
+        if (!from.required() || time < Math.ceil(from.time()) + 1
+                || aff.getRatio46k(chartTime) != aff.getRatio46k(from.time())) return false;
+        if (index + 1 == anchors.size()) return true;
+        TouchAnchor to = anchors.get(index + 1);
+        return from.position().samePosition(to.position())
+                || to.transition() == TouchAnchor.Transition.STEP && time < Math.floor(to.time()) - 1;
+    }
+
+    /** 补齐零时长颜色接触；具体命中机会由完整窗口和颜色约束共同选定。 */
     private static TouchStroke prepareArcCandidate(
             TouchStroke stroke, List<Arc> zeroDurationArcs) {
         if (stroke == null) {
@@ -758,7 +1039,7 @@ public final class TouchScheduler {
         for (Arc arc : zeroDurationArcs) {
             stroke.addArcColorContact(arc, arc.getT1());
         }
-        return colorsCanShareTouch(stroke.arcColorContacts()) ? stroke : null;
+        return stroke;
     }
 
     private static List<Arc> relatedZeroDurationArcs(Aff aff, List<Arc> sourceArcs) {
@@ -937,12 +1218,12 @@ public final class TouchScheduler {
                     if (time >= to - TIME_EPSILON) {
                         break;
                     }
-                    if (!centersShareRange(first, second, time)) {
+                    if (!rangesOverlap(first, second, time)) {
                         return false;
                     }
                 }
                 double finalProbe = Math.nextDown(to);
-                if (finalProbe > from && !centersShareRange(first, second, finalProbe)) {
+                if (finalProbe > from && !rangesOverlap(first, second, finalProbe)) {
                     return false;
                 }
             }
@@ -959,8 +1240,15 @@ public final class TouchScheduler {
         }
     }
 
-    private static boolean centersShareRange(Arc first, Arc second, double time) {
-        return ArcJudgementRange.covers(pointAt(first, time), pointAt(second, time));
+    /** 合轨须为双方都保留屏幕采样余量；只有极窄交集时保留独立路径。 */
+    private static boolean rangesOverlap(Arc first, Arc second, double time) {
+        AffPoint a = pointAt(first, time), b = pointAt(second, time);
+        AffPoint middle = new AffPoint((a.x() + b.x()) / 2, (a.y() + b.y()) / 2);
+        AffPoint towardB = new AffPoint(middle.x() + Math.copySign(X_MARGIN, b.x() - a.x()),
+                middle.y() + Math.copySign(Y_MARGIN, b.y() - a.y()));
+        AffPoint towardA = new AffPoint(middle.x() + Math.copySign(X_MARGIN, a.x() - b.x()),
+                middle.y() + Math.copySign(Y_MARGIN, a.y() - b.y()));
+        return ArcJudgementRange.covers(a, towardB) && ArcJudgementRange.covers(b, towardA);
     }
 
     private static double trackingInterval(Arc arc) {
@@ -1002,24 +1290,41 @@ public final class TouchScheduler {
         }
         for (CoverageDemand demand : plan.windows()) {
             JudgeWindow window = demand.window();
-            AffPoint fixed = demand.point().kind() == JudgePoint.Kind.ARC_HEAD && !separateContacts
-                    ? window.positionAt(window.startTime())
-                    : null;
-            if (!addPathMarker(
-                    markers, window.startTime(), fixed != null, fixed)) {
+            if (!addPathMarker(markers, window.startTime(), false, null)) {
                 return null;
             }
         }
 
         if (separateContacts) {
+            // 放行边界可能位于两个安全的稀疏采样点之间，须显式检查刚离开放行的各个时移位置。
+            for (ColorClearEvidence interval : clear) {
+                for (double boundary : new double[]{interval.startTime(), interval.graceEnd()}) {
+                    for (int shift : new int[]{-11, 0, 11}) {
+                        double time = Math.floor(boundary + shift) + 1;
+                        if (time >= plan.startTime() && time <= plan.endTime()
+                                && primaryArcAt(plan.arcs(), time) != null)
+                            addPathMarker(markers, time, false, null);
+                    }
+                }
+            }
+            int end = plan.arcs().getFirst().getT2();
+            for (Arc arc : plan.arcs()) {
+                if (arc.getT1() > end) {
+                    // 不能释放的空闲段也需避色；把真实尾至下一头的过渡纳入逐毫秒规划。
+                    for (double time = end + 1; time < arc.getT1(); time++)
+                        addPathMarker(markers, time, false, null);
+                }
+                end = Math.max(end, arc.getT2());
+            }
             List<Double> times = List.copyOf(markers.keySet());
             for (int index = 0; index < times.size(); index++) {
                 double time = times.get(index);
                 Arc primary = primaryArcAt(plan.arcs(), time);
                 if (primary == null || markers.get(time).fixedPosition() != null
                         || isConnectionEntry(plan.connectionEntry(), time)) continue;
-                AffPoint center = pointAt(primary, time);
-                if (separatedArcPosition(plan, foreign, clear, time, center).samePosition(center)) continue;
+                AffPoint center = trackingPosition(plan.aff(), plan.arcs(), time, primary);
+                if (separatedArcPosition(plan.aff(), foreign, clear, time, center,
+                        time == plan.startTime()).samePosition(center)) continue;
                 // 绕开其他判定区时保留逐毫秒路径，避免稀疏锚点插值又穿回抢色区域。
                 double from = index == 0 ? time : times.get(index - 1);
                 double to = index + 1 == times.size() ? time : times.get(index + 1);
@@ -1043,33 +1348,31 @@ public final class TouchScheduler {
             PathMarker marker = entry.getValue();
             boolean connectionEntry = isConnectionEntry(plan.connectionEntry(), time);
             Arc primary = primaryArcAt(plan.arcs(), time);
-            if (primary == null && !connectionEntry) {
+            if (primary == null && !connectionEntry && !separateContacts) {
                 return null;
             }
             AffPoint position = marker.fixedPosition() != null
                     ? marker.fixedPosition()
-                    : pointAt(primary, time);
+                    : trackingPosition(plan.aff(), plan.arcs(), time, primary);
             if (marker.fixedPosition() == null && !connectionEntry && separateContacts)
-                position = separatedArcPosition(plan, foreign, clear, time, position);
+                position = separatedArcPosition(plan.aff(), foreign, clear, time, position, time == plan.startTime());
             if (!connectionEntry && !separateContacts
                     && !coversActiveArcs(plan.aff(), plan.arcs(), time, position)) {
                 return null;
             }
             boolean detourStep = false;
-            if (separateContacts && previous != null && primary != null && !connectionEntry
+            if (separateContacts && previous != null && !connectionEntry
                     && !isConnectionEntry(plan.connectionEntry(), previous.time())) {
                 Arc before = primaryArcAt(plan.arcs(), previous.time());
-                if (before != null) {
-                    AffPoint a = pointAt(before, previous.time());
-                    AffPoint b = pointAt(primary, time);
-                    double dx = (position.x() - b.x()) - (previous.position().x() - a.x());
-                    double dy = (position.y() - b.y()) - (previous.position().y() - a.y());
-                    detourStep = Math.abs(dx) > 1e-7 || Math.abs(dy) > 1e-7;
-                    if (detourStep && time != Math.rint(time)) {
-                        // 浮点判定时刻仍保留；避让方向只在可独立输出的整数毫秒切换。
-                        position = previous.position();
-                        detourStep = false;
-                    }
+                AffPoint a = trackingPosition(plan.aff(), plan.arcs(), previous.time(), before);
+                AffPoint b = trackingPosition(plan.aff(), plan.arcs(), time, primary);
+                double dx = (position.x() - b.x()) - (previous.position().x() - a.x());
+                double dy = (position.y() - b.y()) - (previous.position().y() - a.y());
+                detourStep = Math.abs(dx) > 1e-7 || Math.abs(dy) > 1e-7;
+                if (detourStep && time != Math.rint(time)) {
+                    // 浮点判定时刻仍保留；避让方向只在可独立输出的整数毫秒切换。
+                    position = previous.position();
+                    detourStep = false;
                 }
             }
             TouchAnchor.Transition transition = detourStep || previous != null
@@ -1096,37 +1399,70 @@ public final class TouchScheduler {
         return new TrackedPath(List.copyOf(anchors));
     }
 
+    /** 活动Arc矩形交集的中心为各方向留出相同余量，避免贴一侧曲线时另一侧只剩边界覆盖。 */
+    private static AffPoint trackingPosition(Aff aff, List<Arc> arcs, double time, Arc primary) {
+        if (primary == null) {
+            Arc before = arcs.stream().filter(arc -> arc.getT2() < time)
+                    .max(Comparator.comparingInt(Arc::getT2)).orElseThrow();
+            Arc after = arcs.stream().filter(arc -> arc.getT1() > time)
+                    .min(Comparator.comparingInt(Arc::getT1)).orElseThrow();
+            double ratio = (time - before.getT2()) / (after.getT1() - before.getT2());
+            AffPoint a = pointAt(before, before.getT2()), b = pointAt(after, after.getT1());
+            return new AffPoint(a.x() + (b.x() - a.x()) * ratio, a.y() + (b.y() - a.y()) * ratio);
+        }
+        AffPoint center = pointAt(primary, time);
+        double minX = center.x(), maxX = center.x(), minY = center.y(), maxY = center.y();
+        for (Arc arc : arcs) {
+            if (arc == primary || time < arc.getT1() || time >= arc.getT2()
+                    || connectedHandoff(aff, arc, primary)) continue;
+            AffPoint point = pointAt(arc, time);
+            minX = Math.min(minX, point.x());
+            maxX = Math.max(maxX, point.x());
+            minY = Math.min(minY, point.y());
+            maxY = Math.max(maxY, point.y());
+        }
+        return new AffPoint((minX + maxX) / 2, (minY + maxY) / 2);
+    }
+
     /**
      * 在原判定窗口仍可覆盖的前提下绕开其他Arc；必要时短暂离开自身范围，随后逐项重算窗口。
      * 首次按下还须避免提前消费普通点击；整个偏移范围均在清色放行期时无需避色。
      * 原判定区域、名义时间和清色规则不变。
      */
     private static AffPoint separatedArcPosition(
-            ArcGroupPlan plan, List<Arc> foreign, List<ColorClearEvidence> clear,
-            double time, AffPoint center) {
+            Aff aff, List<Arc> foreign, List<ColorClearEvidence> clear,
+            double time, AffPoint center, boolean starting) {
         boolean inGrace = clear.stream().anyMatch(
-                interval -> interval.startTime() <= time - 10 && interval.graceEnd() >= time + 10);
+                interval -> interval.startTime() <= time - 11 && interval.graceEnd() >= time + 11);
         List<Arc> nearby = inGrace ? List.of() : foreign.stream()
-                .filter(arc -> arc.getT1() <= time + 10 && arc.getT2() >= time - 10).toList();
-        List<Note> presses = time == plan.startTime() ? plan.aff().getNoteList().stream()
+                .filter(arc -> arc.getT1() <= time + 11 && arc.getT2() >= time - 11).toList();
+        List<Note> presses = starting ? aff.getNoteList().stream()
                 .filter(note -> note instanceof Click || note instanceof ArcTap)
                 .filter(note -> note.getT1() - time > (note.getNoteCount() == 0 ? 100 : 25) - 10
                         && note.getT1() <= time + 120 + 10).toList() : List.of();
-        double ratio = plan.aff().getRatio46k(time);
+        double ratio = aff.getRatio46k(time);
+        // 16:9各分辨率使用同一归一化投影；6K可输入的横向范围必须随实际投影变化。
+        Resolution resolution = Resolution.R16_9_1280_720;
+        int[] xy = resolution.convertToXY(center.x(), center.y(), ratio);
+        AffPoint home = xy[0] >= 0 && xy[0] <= resolution.getMaxX()
+                && xy[1] >= 0 && xy[1] <= resolution.getMaxY() ? center
+                : resolution.convertToAffPoint(Math.clamp(xy[0], 0, resolution.getMaxX()),
+                Math.clamp(xy[1], 0, resolution.getMaxY()), ratio);
         int bestPressCount = (int) presses.stream()
-                .filter(note -> InputJudgementRange.coversPress(note, center, ratio)).count();
-        int bestCount = arcContactCount(plan.aff(), nearby, time - 10, time + 10, center);
-        if (bestCount == 0 && bestPressCount == 0) return center;
-        AffPoint best = center;
-        double bestDistance = 0;
+                .filter(note -> InputJudgementRange.coversPress(note, home, ratio)).count();
+        int bestCount = arcContactCount(aff, nearby, time - 11, time + 11, home, true);
+        if (bestCount == 0 && bestPressCount == 0) return home;
+        AffPoint best = home;
+        double bestDistance = ArcColorStateMachine.worldDistanceSquared(center, home);
         for (double dx : new double[]{0, -0.15, 0.15, -0.3, 0.3}) {
-            for (double dy : new double[]{0, -0.35, 0.35, -0.6, 0.6}) {
+            for (double dy : new double[]{0, -0.35, 0.35, -0.7, 0.7}) {
                 AffPoint point = new AffPoint(center.x() + dx, center.y() + dy);
-                if (point.x() < -0.5 || point.x() > 1.5 || point.y() < -0.2 || point.y() > 1.61
-                        || point.y() > 0.5 && (point.x() < -0.25 || point.x() > 1.25)) continue;
+                int[] screen = resolution.convertToXY(point.x(), point.y(), ratio);
+                if (screen[0] < 0 || screen[0] > resolution.getMaxX()
+                        || screen[1] < 0 || screen[1] > resolution.getMaxY()) continue;
                 int pressCount = (int) presses.stream()
                         .filter(note -> InputJudgementRange.coversPress(note, point, ratio)).count();
-                int count = arcContactCount(plan.aff(), nearby, time - 10, time + 10, point);
+                int count = arcContactCount(aff, nearby, time - 11, time + 11, point, true);
                 double distance = ArcColorStateMachine.worldDistanceSquared(center, point);
                 if (pressCount < bestPressCount || pressCount == bestPressCount
                         && (count < bestCount || count == bestCount && distance < bestDistance - 1e-9)) {
@@ -1140,17 +1476,21 @@ public final class TouchScheduler {
         return best;
     }
 
-    /** 在候选时间区间逐毫秒计算潜在接触，只用于选点，不改变原谱。 */
+    /** 固定按下仅含整数坐标误差；移动路径另含距离采样误差，两者使用相同的接触区间计算。 */
     private static int arcContactCount(
-            Aff aff, List<Arc> arcs, double start, double end, AffPoint position) {
+            Aff aff, List<Arc> arcs, double start, double end, AffPoint position, boolean moving) {
+        double xMargin = moving ? X_MARGIN : 0.002;
+        double yMargin = moving ? Y_MARGIN : 0.002;
         int count = 0;
         for (Arc arc : arcs) {
             double from = Math.max(arc.getT1(), start);
             double to = Math.min(arc.getT2(), end);
             for (double t = from; t <= to; t++) {
                 AffPoint point = pointAt(arc, t);
-                if (ArcJudgementRange.covers(point,
-                        InputJudgementRange.skyPosition(position, point.y(), aff.getRatio46k(t)))) count++;
+                AffPoint touch = InputJudgementRange.skyPosition(position, point.y(), aff.getRatio46k(t));
+                AffPoint near = new AffPoint(touch.x() - Math.clamp(touch.x() - point.x(), -xMargin, xMargin),
+                        touch.y() - Math.clamp(touch.y() - point.y(), -yMargin, yMargin));
+                if (ArcJudgementRange.covers(point, near)) count++;
             }
         }
         return count;
@@ -1251,14 +1591,14 @@ public final class TouchScheduler {
         return new AffPoint(xy[0], xy[1]);
     }
 
-    private TouchStroke planWindowArcGroup(ArcGroupPlan plan) {
+    private TouchStroke planWindowArcGroup(ArcGroupPlan plan, TouchStroke guide) {
         Arc firstArc = plan.arcs().getFirst();
         List<CoverageDemand> windows = new ArrayList<>(plan.windows());
         AffPoint currentPosition;
         if (plan.connectionEntry() == null) {
             JudgeWindow initialWindow = windows.getFirst().window();
             double initialTime = (initialWindow.startTime() + initialWindow.endTime()) / 2.0;
-            currentPosition = initialWindow.positionAt(initialTime);
+            currentPosition = guide == null ? initialWindow.positionAt(initialTime) : guide.initialPosition();
         } else {
             currentPosition = plan.connectionEntry().position();
         }
@@ -1269,58 +1609,56 @@ public final class TouchScheduler {
                 TouchStroke.Kind.ARC, plan.startTime(), plan.endTime(),
                 currentPosition, sourceId);
 
-        boolean preserveConnectionCenters = !hasConcurrentArcs(plan.arcs());
         double lastHit = plan.startTime();
+        if (plan.connectionEntry() != null) {
+            // 零时长入口与实体蛇头分别保留：入口之后立即接入实体，不能从入口缓慢追向后续命中点。
+            double time = Math.max(nextRoundedMillis(plan.startTime()), firstArc.getT1());
+            Arc primary = primaryArcAt(plan.arcs(), time);
+            if (primary == null) throw new UnsatisfiedWindowException(plan.aff(), plan.windows().getFirst());
+            currentPosition = trackingPosition(plan.aff(), plan.arcs(), time, primary);
+            stroke.addAnchor(new TouchAnchor(time, currentPosition, true, TouchAnchor.Transition.STEP));
+            lastHit = time;
+        }
+        double holdUntil = lastHit;
         while (!windows.isEmpty()) {
-            StationaryHit stationary = selectStationaryHit(
-                    windows, currentPosition, lastHit, preserveConnectionCenters);
+            StationaryHit stationary = selectStationaryHit(windows, currentPosition, lastHit);
             CoverageDemand demand = stationary == null ? windows.getFirst() : stationary.demand();
             AffPoint hitPosition = currentPosition;
             double hitTime;
             if (stationary != null) {
                 hitTime = stationary.hitTime();
             } else {
-                Candidate candidate = chooseCandidate(
-                        windows, 0, currentPosition, lastHit, preserveConnectionCenters);
+                double moveStart = Math.max(lastHit, holdUntil);
+                Candidate candidate = chooseCandidate(windows, 0, currentPosition, moveStart);
                 if (candidate == null) {
                     throw new UnsatisfiedWindowException(plan.aff(), demand);
                 }
                 hitPosition = candidate.position();
                 hitTime = candidate.hitTime();
-                stroke.addAnchor(lastHit, currentPosition);
-                stroke.addAnchor(hitTime, hitPosition);
+                stroke.addAnchor(moveStart, currentPosition);
+                // 新位置提前准备，整体晚10 ms时仍能在原命中机会到达；名义判定时间保持不变。
+                double arrival = hitPosition.samePosition(currentPosition)
+                        ? hitTime : Math.max(nextRoundedMillis(moveStart), hitTime - 10);
+                stroke.addAnchor(arrival, hitPosition);
                 currentPosition = hitPosition;
             }
             lastHit = Math.max(lastHit, hitTime);
+            holdUntil = Math.max(holdUntil, hitTime + WINDOW_HOLD_MILLIS);
             stroke.addHitOpportunity(new HitOpportunity(demand, hitTime, hitPosition));
             windows.remove(demand);
         }
+        // 最后一个窗口同样需要提前偏移保护，不能在尾点刚进入范围前就结束整次按下。
+        stroke.holdUntil(holdUntil);
         return stroke;
     }
 
-    private static boolean hasConcurrentArcs(List<Arc> arcs) {
-        int activeEnd = Integer.MIN_VALUE;
-        for (Arc arc : arcs) {
-            if (arc.getT1() < activeEnd) {
-                return true;
-            }
-            activeEnd = Math.max(activeEnd, arc.getT2());
-        }
-        return false;
-    }
-
     private static StationaryHit selectStationaryHit(
-            List<CoverageDemand> windows, AffPoint position, double notBefore,
-            boolean preserveConnectionCenters) {
+            List<CoverageDemand> windows, AffPoint position, double notBefore) {
         double earliestDeadline = windows.getFirst().window().endTime();
         StationaryHit best = null;
         for (CoverageDemand demand : windows) {
             if (demand.window().endTime() > earliestDeadline + TIME_EPSILON) {
                 break;
-            }
-            AffPoint connectionCenter = connectionCenter(demand, preserveConnectionCenters);
-            if (connectionCenter != null && !connectionCenter.samePosition(position)) {
-                continue;
             }
             OptionalDouble hitTime = firstRepresentableHitAt(
                     demand.window(), position, notBefore);
@@ -1361,8 +1699,7 @@ public final class TouchScheduler {
     }
 
     private Candidate chooseCandidate(List<CoverageDemand> windows, int index,
-                                      AffPoint currentPosition, double notBefore,
-                                      boolean preserveConnectionCenters) {
+                                      AffPoint currentPosition, double notBefore) {
         Set<AffPoint> positions = new LinkedHashSet<>();
         int limit = Math.min(windows.size(), index + LOOKAHEAD_WINDOWS);
         for (int i = index; i < limit; i++) {
@@ -1375,21 +1712,26 @@ public final class TouchScheduler {
             }
         }
 
+        // 相邻窗口的中点提供带余量的共同覆盖位置，避免只能从单条曲线的采样中心选择。
+        List<AffPoint> centers = windows.subList(index, limit).stream()
+                .map(demand -> demand.window().positionAt(
+                        (demand.window().startTime() + demand.window().endTime()) / 2)).toList();
+        for (int i = 0; i < centers.size(); i++) {
+            for (int j = i + 1; j < centers.size(); j++) {
+                AffPoint a = centers.get(i), b = centers.get(j);
+                positions.add(new AffPoint((a.x() + b.x()) / 2, (a.y() + b.y()) / 2));
+            }
+        }
         Candidate best = null;
         CoverageDemand currentDemand = windows.get(index);
         JudgeWindow currentWindow = currentDemand.window();
-        AffPoint connectionCenter = connectionCenter(
-                currentDemand, preserveConnectionCenters);
         for (AffPoint position : positions) {
-            if (connectionCenter != null && !connectionCenter.samePosition(position)) {
-                continue;
-            }
             double earliest = position.samePosition(currentPosition)
                     ? notBefore
                     : nextRoundedMillis(notBefore);
             OptionalDouble firstHit = position.samePosition(currentPosition)
                     ? firstRepresentableHitAt(currentWindow, position, notBefore)
-                    : currentWindow.firstTimeAt(position, earliest);
+                    : firstStableHitAt(currentWindow, position, earliest);
             if (firstHit.isEmpty()) {
                 continue;
             }
@@ -1419,18 +1761,6 @@ public final class TouchScheduler {
         return best;
     }
 
-    private static AffPoint connectionCenter(
-            CoverageDemand demand, boolean preserveConnectionCenters) {
-        if (!preserveConnectionCenters
-                || !(demand.point().source() instanceof Arc arc)
-                || !arc.hasPredecessor()
-                || Math.abs(demand.point().nominalTime() - arc.getT1()) > TIME_EPSILON) {
-            return null;
-        }
-        double[] xy = arc.getAffPoint(arc.getT1());
-        return new AffPoint(xy[0], xy[1]);
-    }
-
     private static boolean preservesNextWindowAfter(
             List<CoverageDemand> windows, CoverageDemand completed,
             AffPoint position, double notBefore) {
@@ -1453,13 +1783,15 @@ public final class TouchScheduler {
         if (firstRepresentableHitAt(window, position, notBefore).isPresent()) {
             return true;
         }
-        double movedHitTime = Math.max(window.startTime(), nextRoundedMillis(notBefore));
-        return movedHitTime <= window.endTime() + TIME_EPSILON;
+        // 改换位置须先保留当前窗口的覆盖，再容纳新位置晚10 ms到达及至少1 ms稳定输入。
+        double movedHitTime = Math.max(window.startTime(), nextRoundedMillis(notBefore + WINDOW_HOLD_MILLIS) + 10);
+        double stableTime = Math.min(1, window.endTime() - window.startTime());
+        return movedHitTime + stableTime <= window.endTime() + TIME_EPSILON;
     }
 
     private static OptionalDouble firstRepresentableHitAt(
             JudgeWindow window, AffPoint position, double notBefore) {
-        OptionalDouble firstHit = window.firstTimeAt(position, notBefore);
+        OptionalDouble firstHit = firstStableHitAt(window, position, notBefore);
         if (firstHit.isEmpty()) {
             return firstHit;
         }
@@ -1468,9 +1800,19 @@ public final class TouchScheduler {
                 || Math.round(hitTime) != Math.round(notBefore)) {
             return firstHit;
         }
-        OptionalDouble separatedHit = window.firstTimeAt(
-                position, nextRoundedMillis(notBefore));
+        OptionalDouble separatedHit = firstStableHitAt(window, position, nextRoundedMillis(notBefore));
         return separatedHit.isPresent() ? separatedHit : firstHit;
+    }
+
+    /** 单条Arc曲线各轴单调；首次进入之后不足1 ms就离开的候选不能提供稳定输出覆盖。 */
+    private static OptionalDouble firstStableHitAt(JudgeWindow window, AffPoint position, double notBefore) {
+        OptionalDouble first = window.firstTimeAt(position, notBefore, X_MARGIN, Y_MARGIN);
+        if (first.isEmpty() || !(window.point().source() instanceof Arc)) return first;
+        double duration = Math.min(1, window.endTime() - window.startTime());
+        double next = first.getAsDouble() + duration;
+        if (next > window.endTime()) return OptionalDouble.empty();
+        return ArcJudgementRange.covers(window.positionAt(next), position, X_MARGIN, Y_MARGIN)
+                ? first : OptionalDouble.empty();
     }
 
     private static double nextRoundedMillis(double time) {
@@ -1514,10 +1856,8 @@ public final class TouchScheduler {
      *
      * @param aff     提供零时长连接入口的谱面
      * @param strokes 尚未认领普通按下边沿的触控列表
-     * @param tracked 已被回放否决的来源，检查共享Hold是否会阻塞后继颜色释放
      */
-    private void mergeCompatibleHoldAndArcStrokes(
-            Aff aff, List<TouchStroke> strokes, Set<Integer> tracked) {
+    private void mergeCompatibleHoldAndArcStrokes(Aff aff, List<TouchStroke> strokes) {
         List<TouchStroke> holds = new ArrayList<>(strokes.stream()
                 .filter(stroke -> stroke.kind() == TouchStroke.Kind.HOLD)
                 .toList());
@@ -1530,9 +1870,8 @@ public final class TouchScheduler {
                 continue;
             }
             ConnectionEntry entry = arcEntry(aff, arc);
-            boolean checkRelease = arc.sourceIds().stream().anyMatch(tracked::contains);
             List<TouchStroke> sharedStarts = holds.stream()
-                    .filter(hold -> !checkRelease || !retainsArcColor(aff, hold, arc))
+                    .filter(hold -> !retainsArcColor(aff, hold, arc))
                     .filter(hold -> canShareHoldAndArcStart(hold, arc, entry))
                     .sorted(Comparator.comparingDouble(hold -> ArcColorStateMachine.worldDistanceSquared(
                             hold.initialPosition(), entry.position())))
@@ -1555,7 +1894,7 @@ public final class TouchScheduler {
             }
 
             List<TouchStroke> candidates = holds.stream()
-                    .filter(hold -> !checkRelease || !retainsArcColor(aff, hold, arc))
+                    .filter(hold -> !retainsArcColor(aff, hold, arc))
                     .filter(hold -> canMergeHoldAndArc(hold, entry))
                     .sorted(Comparator.comparingDouble(hold -> ArcColorStateMachine.worldDistanceSquared(
                             hold.initialPosition(), entry.position())))
@@ -1769,9 +2108,7 @@ public final class TouchScheduler {
      * 仍须独立按住的Hold在自身轨道内选择较少触及Arc的位置，避免在放行结束时抢色。
      * 已与Arc共享生命周期的Hold不经过此路径；原名义判定和按下/抬起时间均保留。
      */
-    private static void avoidCompetingHoldPositions(
-            Aff aff, List<TouchStroke> strokes, Set<Integer> tracked) {
-        if (tracked.isEmpty()) return;
+    private static void avoidCompetingHoldPositions(Aff aff, List<TouchStroke> strokes) {
         for (int index = 0; index < strokes.size(); index++) {
             TouchStroke hold = strokes.get(index);
             List<Hold> sources = hold.hitOpportunities().stream()
@@ -1788,7 +2125,6 @@ public final class TouchScheduler {
             List<Arc> active = aff.getArcList().stream()
                     .filter(arc -> arc.getT1() <= source.getT2() && arc.getT2() >= source.getT1())
                     .toList();
-            if (active.stream().noneMatch(arc -> tracked.contains(arc.getSourceId()))) continue;
             AffPoint center = hold.initialPosition();
             AffPoint best = center;
             double bestContact = holdArcContact(active, source, center);
@@ -1835,15 +2171,13 @@ public final class TouchScheduler {
     }
 
     /** 独立短按可在原最短时长之后提前抬起，避开晚偏移下下一条Arc的染色入口。 */
-    private static void trimTrailingPresses(Aff aff, List<TouchStroke> strokes, Set<Integer> tracked) {
-        if (tracked.isEmpty()) return;
+    private static void trimTrailingPresses(Aff aff, List<TouchStroke> strokes) {
         for (int index = 0; index < strokes.size(); index++) {
             TouchStroke press = strokes.get(index);
             if (press.kind() != TouchStroke.Kind.CLICK) continue;
             double end = press.endTime();
             for (Arc arc : aff.getArcList()) {
-                if (!tracked.contains(arc.getSourceId()) || arc.getT1() > end + 10
-                        || arc.getT2() < press.startTime() - 10) continue;
+                if (arc.getT1() > end + 10 || arc.getT2() < press.startTime() - 10) continue;
                 double from = Math.max(arc.getT1(), press.startTime() - 10);
                 double until = Math.min(arc.getT2(), end + 10);
                 for (double time = from; time <= until; time++) {
@@ -1861,11 +2195,17 @@ public final class TouchScheduler {
         }
     }
 
-    /** 同押按下在自身判定范围中优先使用不会消费其他物件的坐标。 */
-    private static AffPoint independentPressPosition(
-            Aff aff, PressDemand demand, List<PressDemand> demands, Set<Integer> tracked) {
+    /** 同押按下避免消费其他物件；共享蛇头时还须落在可接续近域及其判定矩形内。 */
+    private static AffPoint pressPosition(
+            Aff aff, PressDemand demand, List<PressDemand> demands, AffPoint entry) {
         AffPoint center = demand.position();
         List<AffPoint> positions = new ArrayList<>(List.of(center));
+        if (entry != null) {
+            for (double dx : new double[]{0, -0.12, 0.12}) {
+                for (double dy : new double[]{0, -0.35, 0.35})
+                    positions.add(new AffPoint(entry.x() + dx, entry.y() + dy));
+            }
+        }
         if (demand.source() instanceof ArcTap) {
             for (double dx : new double[]{0, -0.25, 0.25}) {
                 for (double dy : new double[]{0, -0.5, 0.5}) {
@@ -1878,8 +2218,8 @@ public final class TouchScheduler {
             for (double dx : new double[]{-0.24, 0.24, -0.12, 0.12})
                 positions.add(new AffPoint(center.x() + dx, center.y()));
         }
-        List<Arc> arcs = tracked.isEmpty() ? List.of() : aff.getArcList().stream()
-                .filter(arc -> tracked.contains(arc.getSourceId()) && arc.getT1() <= demand.source().getT2() + 10
+        List<Arc> arcs = aff.getArcList().stream()
+                .filter(arc -> arc.getT1() <= demand.source().getT2() + 10
                         && arc.getT2() >= demand.time() - 10).toList();
         double ratio = aff.getRatio46k(demand.time());
         AffPoint best = center;
@@ -1887,14 +2227,16 @@ public final class TouchScheduler {
         int bestArcCount = Integer.MAX_VALUE;
         double bestDistance = Double.POSITIVE_INFINITY;
         for (AffPoint point : positions) {
-            if (!InputJudgementRange.coversPress(demand.source(), point, ratio)) continue;
+            if (!InputJudgementRange.coversPress(demand.source(), point, ratio)
+                    || entry != null && (!ArcColorStateMachine.areClose(point, entry)
+                    || !ArcJudgementRange.covers(entry, point))) continue;
             int count = 0;
             for (PressDemand other : demands) {
                 if (other != demand && other.time() == demand.time()
                         && InputJudgementRange.coversPress(other.source(), point, ratio)) count++;
             }
             int arcCount = arcContactCount(aff, arcs, demand.time() - 10,
-                    demand.source().getT2() + 10, point);
+                    demand.source().getT2() + 10, point, false);
             double distance = center.distanceSquared(point);
             if (count < bestCount || count == bestCount
                     && (arcCount < bestArcCount || arcCount == bestArcCount && distance < bestDistance)) {
@@ -1919,10 +2261,8 @@ public final class TouchScheduler {
      * @param aff     提供真实蛇头入口的谱面
      * @param demands 仍须保留按下边沿的判定需求
      * @param strokes 已完成 Hold 接续的触控列表
-     * @param tracked 已被回放否决的Arc来源，独立短按须避开其染色区域
      */
-    private void addOrdinaryPresses(
-            Aff aff, List<PressDemand> demands, List<TouchStroke> strokes, Set<Integer> tracked) {
+    private void addOrdinaryPresses(Aff aff, List<PressDemand> demands, List<TouchStroke> strokes) {
         List<TouchStroke> longStrokes = strokes.stream()
                 .filter(stroke -> stroke.kind() != TouchStroke.Kind.CLICK)
                 .sorted(Comparator.comparingDouble(TouchStroke::startTime))
@@ -1957,9 +2297,7 @@ public final class TouchScheduler {
                             demand.position(), entry.position())))
                     .toList();
             for (PressDemand demand : candidates) {
-                AffPoint position = pressEntryIsStable(
-                        demand.source(), entry.position(), aff.getRatio46k(demand.time()))
-                        ? entry.position() : independentPressPosition(aff, demand, demands, tracked);
+                AffPoint position = pressPosition(aff, demand, demands, entry.position());
                 if (!ArcColorStateMachine.areClose(position, entry.position())) continue;
                 TouchStroke press = new TouchStroke(
                         TouchStroke.Kind.CLICK, demand.time(), demand.source().getT2(),
@@ -1980,7 +2318,7 @@ public final class TouchScheduler {
                 strokes.add(new TouchStroke(
                         TouchStroke.Kind.CLICK,
                         demand.time(), demand.source().getT2(),
-                        independentPressPosition(aff, demand, demands, tracked), demand.source().getSourceId()));
+                        pressPosition(aff, demand, demands, null), demand.source().getSourceId()));
             }
         }
     }

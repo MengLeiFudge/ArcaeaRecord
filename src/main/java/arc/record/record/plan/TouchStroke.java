@@ -54,6 +54,18 @@ public final class TouchStroke {
         sourceIds.add(sourceId);
     }
 
+    /** 复制模板的可变容器；锚点、窗口和未修改的长键来源仅作为只读数据共享。 */
+    TouchStroke(TouchStroke source) {
+        kind = source.kind;
+        startTime = source.startTime;
+        endTime = source.endTime;
+        anchors.addAll(source.anchors);
+        hitOpportunities.addAll(source.hitOpportunities);
+        arcColorContacts.addAll(source.arcColorContacts);
+        sourceIds.addAll(source.sourceIds);
+        absorbedPress = source.absorbedPress;
+    }
+
     public Kind kind() {
         return kind;
     }
@@ -88,6 +100,11 @@ public final class TouchStroke {
 
     public AffPoint finalPosition() {
         return anchors.getLast().position();
+    }
+
+    /** 保持当前位置至指定谱面时间，只延长本次按下的结束边界，不增加移动。 */
+    void holdUntil(double time) {
+        endTime = Math.max(endTime, time);
     }
 
     /**
@@ -193,6 +210,17 @@ public final class TouchStroke {
         if (opportunity.demand().point().source() instanceof Arc arc) {
             addArcColorContact(arc, opportunity.hitTime());
         }
+    }
+
+    /**
+     * 保留原路径和判定身份，用按颜色约束重新选定的机会替换Arc规划注记。
+     *
+     * @param opportunities 同一组原始Arc窗口在当前路径中的合规命中机会
+     */
+    void replaceArcOpportunities(List<HitOpportunity> opportunities) {
+        hitOpportunities.removeIf(hit -> hit.demand().point().source() instanceof Arc);
+        arcColorContacts.removeIf(contact -> contact.source().getT1() != contact.source().getT2());
+        opportunities.forEach(this::addCoveredOpportunity);
     }
 
     /**

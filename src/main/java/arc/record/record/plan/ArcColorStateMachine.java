@@ -76,7 +76,7 @@ public final class ArcColorStateMachine {
                 Arc first = inputArcs.get(i);
                 Arc second = inputArcs.get(j);
                 if (first.getColor() != second.getColor()) {
-                    addColorBridgeEvents(first, second, events);
+                    addColorClearEvents(first, second, events);
                 }
             }
         }
@@ -105,8 +105,9 @@ public final class ArcColorStateMachine {
         }
     }
 
-    private void addColorBridgeEvents(Arc first, Arc second, List<ColorEvent> events) {
-        for (ColorBridgeInterval interval : colorBridgeIntervals(first, second)) {
+    /** 候选已经完成分组准入，触点状态按全部真实清色刷新，包括零时长交接。 */
+    private void addColorClearEvents(Arc first, Arc second, List<ColorEvent> events) {
+        for (ColorBridgeInterval interval : colorClearIntervals(first, second)) {
             events.add(ColorEvent.clear(
                     interval.startTime(), interval.endTime() + COLOR_GRACE_MILLIS));
         }
@@ -117,12 +118,20 @@ public final class ArcColorStateMachine {
      * 子区间自身不设持续时长门槛，并从首次相近候选时刻开始，不向前倒推。
      */
     static List<ColorBridgeInterval> colorBridgeIntervals(Arc first, Arc second) {
+        double from = Math.max(first.getT1(), second.getT1());
+        double to = Math.min(first.getT2(), second.getT2());
+        return to - from < COLOR_BRIDGE_MIN_OVERLAP_MILLIS
+                ? List.of() : colorClearIntervals(first, second);
+    }
+
+    /** 真实清色包含零时长连接与相接端点；17 ms只用于规划中的跨色合轨准入。 */
+    static List<ColorBridgeInterval> colorClearIntervals(Arc first, Arc second) {
         if (first.getArcType() != ArcType.FALSE || second.getArcType() != ArcType.FALSE) {
             return List.of();
         }
         double from = Math.max(first.getT1(), second.getT1());
         double to = Math.min(first.getT2(), second.getT2());
-        if (to - from < COLOR_BRIDGE_MIN_OVERLAP_MILLIS) {
+        if (to < from) {
             return List.of();
         }
 
@@ -132,7 +141,8 @@ public final class ArcColorStateMachine {
              time < to - TIME_EPSILON; time++) {
             probes.add(time);
         }
-        probes.add(Math.nextDown(to));
+        if (to > from) probes.add(Math.nextDown(to));
+        probes.add(to);
 
         List<ColorBridgeInterval> result = new ArrayList<>();
         double closeFrom = Double.NaN;

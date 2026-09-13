@@ -225,6 +225,9 @@ public final class ForwardReplay {
         private double graceUntil = Double.NEGATIVE_INFINITY;
         private long started;
         private double ratio;
+        /** 物理输入批次和投影都未变化时，屏幕坐标的反解结果可继续使用。 */
+        private int positionBatch = -1;
+        private double positionRatio = Double.NaN;
 
         /** 建立场景静态索引，所有状态都由空触点开始。 */
         private Session(Aff chart, ReplayContext context, Goals goals, List<Batch> batches, int offset) {
@@ -276,7 +279,12 @@ public final class ForwardReplay {
                     assignColors();
                     judgeContinuous();
                     rejectExpired();
-                    activeGoals.removeIf(goal -> states.stream().allMatch(state -> state.done.get(goal.id())));
+                    activeGoals.removeIf(goal -> {
+                        for (State state : states) {
+                            if (!state.done.get(goal.id())) return false;
+                        }
+                        return true;
+                    });
                     if (time == end) {
                         break;
                     }
@@ -337,10 +345,10 @@ public final class ForwardReplay {
 
         /** state=1 对已有 ID 只移动，只有新 ID 才产生可以判定普通点击的边沿。 */
         private List<Integer> applyInput() {
-            List<Integer> newTouches = new ArrayList<>();
             if (batchIndex >= batches.size() || chartTime(batches.get(batchIndex)) != time) {
-                return newTouches;
+                return List.of();
             }
+            List<Integer> newTouches = new ArrayList<>();
             for (InputEvent event : batches.get(batchIndex++).events()) {
                 Touch old = touches.get(event.id());
                 if (!event.down() && old == null) {
@@ -377,10 +385,13 @@ public final class ForwardReplay {
 
         /** 当前时刻的投影只计算一次，所有归属分支使用相同物理输入。 */
         private void updatePositions() {
+            if (positionBatch == batchIndex && positionRatio == ratio) return;
             positions.clear();
             for (Touch touch : touches.values()) {
                 positions.put(touch.id(), position(touch));
             }
+            positionBatch = batchIndex;
+            positionRatio = ratio;
         }
 
         /** 反解实际屏幕位置，不对齐原计划曲线。 */
@@ -526,6 +537,10 @@ public final class ForwardReplay {
                         pending |= 1 << color;
                     }
                 }
+                if (pending == 0) {
+                    assigned.add(state);
+                    continue;
+                }
                 expandColors(state, pending, new HashSet<>(), assigned);
                 checkBudget(assigned.size());
             }
@@ -659,7 +674,8 @@ public final class ForwardReplay {
 
         /** 只合并所有游戏状态完全一致的分支；历史不影响未来，只保留一条有效反例前缀。 */
         private List<State> distinct(List<State> values) {
-            List<State> result = new ArrayList<>(new LinkedHashSet<>(values));
+            // 单一分支天然唯一，避免每毫秒构造哈希表并扫描整份已完成判定位图。
+            List<State> result = values.size() < 2 ? values : new ArrayList<>(new LinkedHashSet<>(values));
             peakStates = Math.max(peakStates, result.size());
             checkBudget(result.size());
             return result;

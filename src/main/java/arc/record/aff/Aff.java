@@ -13,6 +13,7 @@ import java.util.regex.Pattern;
 import arc.record.aff.judge.ArcTopology;
 import arc.record.aff.note.Arc;
 import arc.record.aff.note.ArcTap;
+import arc.record.aff.note.ArcType;
 import arc.record.aff.note.Click;
 import arc.record.aff.note.Hold;
 import arc.record.aff.note.Note;
@@ -175,7 +176,8 @@ public class Aff {
                     } else if (line.startsWith("arc")) {
                         requireFormat(line, P_ARC, "arc");
                         Arc arc = new Arc(line);
-                        if (currentGroup.noInput) {
+                        // designant 仅用于谱面演出，不为父物件或其 Arctap 创建触控需求。
+                        if (currentGroup.noInput || arc.getArcType() == ArcType.DESIGNANT) {
                             arc.getArcTapList();
                             continue;
                         }

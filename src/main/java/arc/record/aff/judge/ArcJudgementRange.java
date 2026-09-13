@@ -21,8 +21,13 @@ public final class ArcJudgementRange {
      * @return 两轴距离都位于判定半径内时返回 true
      */
     public static boolean covers(AffPoint arcPosition, AffPoint touchPosition) {
-        return Math.abs(arcPosition.x() - touchPosition.x()) <= X_RADIUS
-                && Math.abs(arcPosition.y() - touchPosition.y()) <= Y_RADIUS;
+        return covers(arcPosition, touchPosition, 0, 0);
+    }
+
+    /** 在真实矩形内部保留指定AFF余量，用于生成器抵抗输出采样误差；默认判定调用仍使用零余量。 */
+    public static boolean covers(AffPoint arcPosition, AffPoint touchPosition, double xMargin, double yMargin) {
+        return Math.abs(arcPosition.x() - touchPosition.x()) + xMargin <= X_RADIUS
+                && Math.abs(arcPosition.y() - touchPosition.y()) + yMargin <= Y_RADIUS;
     }
 
     /**
@@ -33,8 +38,13 @@ public final class ArcJudgementRange {
      * @return 触点位于矩形内时为 0，否则为到最近边界的距离平方
      */
     public static double distanceSquared(AffPoint arcPosition, AffPoint touchPosition) {
-        double dx = Math.max(0, Math.abs(arcPosition.x() - touchPosition.x()) - X_RADIUS);
-        double dy = Math.max(0, Math.abs(arcPosition.y() - touchPosition.y()) - Y_RADIUS);
+        return distanceSquared(arcPosition, touchPosition, 0, 0);
+    }
+
+    /** 到保留输出余量后的内部矩形的距离平方，仅用于规划选点；原判定范围保持不变。 */
+    public static double distanceSquared(AffPoint arcPosition, AffPoint touchPosition, double xMargin, double yMargin) {
+        double dx = Math.max(0, Math.abs(arcPosition.x() - touchPosition.x()) + xMargin - X_RADIUS);
+        double dy = Math.max(0, Math.abs(arcPosition.y() - touchPosition.y()) + yMargin - Y_RADIUS);
         return dx * dx + dy * dy;
     }
 }
