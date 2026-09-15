@@ -13,7 +13,7 @@ import arc.record.aff.note.Arc;
 /**
  * 输入实体 Arc 集合的严格首尾连接图。
  *
- * <p>图中保留零时长和携带 Arctap 的 false Arc。连接只影响判定点和音弧组，
+ * <p>图中保留零时长实体 Arc；悬挂 Arctap 的父线不属于输入实体 Arc。连接只影响判定点和音弧组，
  * 不直接表示最终应使用同一个物理触点。</p>
  */
 public final class ArcTopology {

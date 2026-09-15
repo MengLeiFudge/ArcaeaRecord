@@ -73,8 +73,9 @@ public final class TouchStrokeRenderer {
         }
         TouchAnchor lastAnchor = anchors.getLast();
         if (lastTime > lastAnchor.time() + 1e-7) {
+            // 这里只补足投影采样区间；同毫秒已有真实必需锚点时以它为准。
             anchors.add(new TouchAnchor(
-                    lastTime, lastPosition, true, TouchAnchor.Transition.LINEAR));
+                    lastTime, lastPosition, false, TouchAnchor.Transition.LINEAR));
         }
 
         TreeMap<Integer, RenderedEvent> events = new TreeMap<>();

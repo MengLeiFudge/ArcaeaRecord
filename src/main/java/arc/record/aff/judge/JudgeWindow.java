@@ -61,7 +61,8 @@ public final class JudgeWindow {
         }
         Note source = point.source();
         if (source instanceof Arc arc) {
-            double[] xy = arc.getAffPoint(time);
+            // 窗口可越过原物件首尾，图形残余的可判位置仍取相应端点。
+            double[] xy = arc.getAffPoint(Math.clamp(time, arc.getT1(), arc.getT2()));
             return new AffPoint(xy[0], xy[1]);
         }
         if (source instanceof Hold hold) {

@@ -13,7 +13,6 @@ import java.util.regex.Pattern;
 import arc.record.aff.judge.ArcTopology;
 import arc.record.aff.note.Arc;
 import arc.record.aff.note.ArcTap;
-import arc.record.aff.note.ArcType;
 import arc.record.aff.note.Click;
 import arc.record.aff.note.Hold;
 import arc.record.aff.note.Note;
@@ -44,7 +43,7 @@ public class Aff {
     private static final Pattern P_ARC = Pattern.compile(
             "arc\\([0-9]+,[0-9]+," + NUMBER + "," + NUMBER + ","
                     + "(b|s|si|so|sisi|siso|sosi|soso)," + NUMBER + "," + NUMBER
-                    + ",[0-3],[^,]+,(true|false|designant)(," + NUMBER + ")?\\)"
+                    + ",[0-3],[^,]+,(true|false)(," + NUMBER + ")?\\)"
                     + "(\\[arctap\\([0-9]+\\)(,arctap\\([0-9]+\\))*])?;");
     private static final Pattern P_TIMING = Pattern.compile(
             "timing\\([0-9]+," + NUMBER + "," + UNSIGNED_NUMBER + "\\);");
@@ -174,10 +173,21 @@ public class Aff {
                         currentGroup.sourceNotes.add(hold);
                         currentGroup.noteList.add(hold);
                     } else if (line.startsWith("arc")) {
+                        // 未知类型整行不参与输入；先识别第十字段，避免演出行及其 Arctap 进入完整解析。
+                        int close = line.indexOf(')');
+                        if (!line.startsWith("arc(") || close < 0) {
+                            throw new IllegalArgumentException("arc 缺少参数列表");
+                        }
+                        String[] fields = line.substring(4, close).split(",", -1);
+                        if (fields.length < 10 || fields[9].isEmpty()) {
+                            throw new IllegalArgumentException("arc 缺少类型字段");
+                        }
+                        if (!"true".equals(fields[9]) && !"false".equals(fields[9])) {
+                            continue;
+                        }
                         requireFormat(line, P_ARC, "arc");
                         Arc arc = new Arc(line);
-                        // designant 仅用于谱面演出，不为父物件或其 Arctap 创建触控需求。
-                        if (currentGroup.noInput || arc.getArcType() == ArcType.DESIGNANT) {
+                        if (currentGroup.noInput) {
                             arc.getArcTapList();
                             continue;
                         }

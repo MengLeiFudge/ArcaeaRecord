@@ -73,8 +73,9 @@ public final class ChartJudgementModel {
                         deadline = Math.min(deadline, successor.getT1());
                     }
                 }
-                double start = Math.max(nominalTime, note.getT1());
-                double end = Math.min(deadline, note.getT2());
+                // 第五项为图形可判尾界；不得把原物件 t2 当作判定区间的硬截止。
+                double start = Math.max(nominalTime, note.getT1() - LongNoteJudgement.INPUT_MARGIN_MILLIS);
+                double end = Math.min(deadline, note.getT2() + LongNoteJudgement.INPUT_MARGIN_MILLIS);
                 boolean countsCombo = !(note instanceof Arc arc)
                         || arc.getArctapTimingList().isEmpty();
                 JudgePoint.Kind kind = note instanceof Arc arc

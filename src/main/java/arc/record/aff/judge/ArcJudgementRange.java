@@ -7,8 +7,10 @@ package arc.record.aff.judge;
  * 纵向半径由世界坐标判定高度 2.5 除以纵向倍率 4.5。边界包含在有效范围内。</p>
  */
 public final class ArcJudgementRange {
-    private static final double X_RADIUS = 19.0 / 85.0;
-    private static final double Y_RADIUS = 5.0 / 9.0;
+    /** AFF 横轴上的真实判定半径，规划可用其边界选择互不抢色的入口。 */
+    public static final double X_RADIUS = 19.0 / 85.0;
+    /** AFF 纵轴上的真实判定半径；天空边界钳制仍由输入投影负责。 */
+    public static final double Y_RADIUS = 5.0 / 9.0;
 
     private ArcJudgementRange() {
     }

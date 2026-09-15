@@ -1,13 +1,16 @@
 package arc.record.record.plan;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 
 import arc.record.aff.Aff;
@@ -17,24 +20,24 @@ import arc.record.aff.note.Arc;
 import arc.record.aff.note.ArcType;
 
 /**
- * 按已规划颜色接触验证 Arc 染色、异色清色、临时放行和抬起冷却。
+ * 按已规划颜色接触验证 Arc 染色、即时清色/重染和抬起冷却。
  *
  * <p>该状态机只约束触点归属，不生成位置锚点或判定。异色清色使用世界坐标
  * 距离，触点命中范围仍由判定模型独立处理。</p>
  */
 public final class ArcColorStateMachine {
-    private static final double COLOR_BRIDGE_MIN_OVERLAP_MILLIS = 17.0;
-    /** 局部清色结束后继续允许异色接触的时长，单位为毫秒。 */
-    static final double COLOR_GRACE_MILLIS = 500.0;
     private static final double MAX_COOLDOWN_MILLIS = 1000.0;
     private static final double TIME_EPSILON = 1e-7;
 
     private final Aff aff;
     private final ArcTopology topology;
     private final Set<Integer> inputArcIds;
+    private final List<ColorEvent> clearEvents = new ArrayList<>();
+    private final NavigableMap<Double, Integer> clearTimeline;
     private final Map<TouchStroke, Set<Integer>> colorsByTouch = new IdentityHashMap<>();
     private final Map<Integer, Map<Integer, Cooldown>> cooldownUntilByComponent = new HashMap<>();
-    private double graceUntil = Double.NEGATIVE_INFINITY;
+    /** 各颜色正在相近的 Arc 对数量，重叠区间结束时不能过早恢复颜色。 */
+    private final int[] clearDepth = new int[4];
 
     /**
      * 创建当前谱面变体的染色状态机。
@@ -46,6 +49,35 @@ public final class ArcColorStateMachine {
         this.aff = aff;
         this.topology = aff.getArcTopology();
         this.inputArcIds = Set.copyOf(inputArcIds);
+        List<Arc> arcs = topology.arcs().stream()
+                .filter(arc -> inputArcIds.contains(arc.getSourceId())).toList();
+        for (int i = 0; i < arcs.size(); i++) {
+            for (int j = i + 1; j < arcs.size(); j++) {
+                if (arcs.get(i).getColor() != arcs.get(j).getColor()) {
+                    addColorClearEvents(arcs.get(i), arcs.get(j), clearEvents);
+                }
+            }
+        }
+        clearEvents.sort(Comparator.comparingDouble(ColorEvent::time));
+        TreeMap<Double, Integer> timeline = new TreeMap<>();
+        timeline.put(Double.NEGATIVE_INFINITY, 0);
+        int[] depth = new int[4];
+        for (ColorEvent event : clearEvents) {
+            int mask = 0;
+            for (int color = 0; color < depth.length; color++) {
+                if ((event.colors() & (1 << color)) != 0) {
+                    depth[color] += event.type() == EventType.CLEAR_START ? 1 : -1;
+                }
+                if (depth[color] > 0) mask |= 1 << color;
+            }
+            timeline.put(event.time(), mask);
+        }
+        clearTimeline = Collections.unmodifiableNavigableMap(timeline);
+    }
+
+    /** 只读的真实清色边界，供初染/重染选点复用，值为当前无色的颜色位。 */
+    NavigableMap<Double, Integer> clearTimeline() {
+        return clearTimeline;
     }
 
     /**
@@ -67,19 +99,7 @@ public final class ArcColorStateMachine {
             }
         }
 
-        List<Arc> inputArcs = topology.arcs().stream()
-                .filter(arc -> inputArcIds.contains(arc.getSourceId()))
-                .filter(arc -> arc.getArcType() == ArcType.FALSE)
-                .toList();
-        for (int i = 0; i < inputArcs.size(); i++) {
-            for (int j = i + 1; j < inputArcs.size(); j++) {
-                Arc first = inputArcs.get(i);
-                Arc second = inputArcs.get(j);
-                if (first.getColor() != second.getColor()) {
-                    addColorClearEvents(first, second, events);
-                }
-            }
-        }
+        events.addAll(clearEvents);
 
         for (int componentId : componentIds) {
             double endTime = topology.component(componentId).stream()
@@ -97,7 +117,8 @@ public final class ArcColorStateMachine {
 
         for (ColorEvent event : events) {
             switch (event.type()) {
-                case CLEAR -> clearColors(event.graceEnd());
+                case CLEAR_START -> changeClearColors(event.colors(), 1);
+                case CLEAR_END -> changeClearColors(event.colors(), -1);
                 case HIT -> hit(event.stroke(), event.arc(), event.time());
                 case RELEASE -> release(event.stroke(), event.time());
                 case GROUP_END -> cooldownUntilByComponent.remove(event.componentId());
@@ -105,26 +126,16 @@ public final class ArcColorStateMachine {
         }
     }
 
-    /** 候选已经完成分组准入，触点状态按全部真实清色刷新，包括零时长交接。 */
+    /** 清色只覆盖真实相近区间，分离后的第一个时刻立即恢复染色。 */
     private void addColorClearEvents(Arc first, Arc second, List<ColorEvent> events) {
+        int colors = (1 << first.getColor()) | (1 << second.getColor());
         for (ColorBridgeInterval interval : colorClearIntervals(first, second)) {
-            events.add(ColorEvent.clear(
-                    interval.startTime(), interval.endTime() + COLOR_GRACE_MILLIS));
+            events.add(ColorEvent.clear(interval.startTime(), colors, true));
+            events.add(ColorEvent.clear(Math.nextUp(interval.endTime()), colors, false));
         }
     }
 
-    /**
-     * 提取共同有效至少 17 ms 的两条 Arc 在其中实际相近的各个局部子区间。
-     * 子区间自身不设持续时长门槛，并从首次相近候选时刻开始，不向前倒推。
-     */
-    static List<ColorBridgeInterval> colorBridgeIntervals(Arc first, Arc second) {
-        double from = Math.max(first.getT1(), second.getT1());
-        double to = Math.min(first.getT2(), second.getT2());
-        return to - from < COLOR_BRIDGE_MIN_OVERLAP_MILLIS
-                ? List.of() : colorClearIntervals(first, second);
-    }
-
-    /** 真实清色包含零时长连接与相接端点；17 ms只用于规划中的跨色合轨准入。 */
+    /** 真实清色包含零时长连接与相接端点，不附加持续时长或分离宽限。 */
     static List<ColorBridgeInterval> colorClearIntervals(Arc first, Arc second) {
         if (first.getArcType() != ArcType.FALSE || second.getArcType() != ArcType.FALSE) {
             return List.of();
@@ -134,6 +145,15 @@ public final class ArcColorStateMachine {
         if (to < from) {
             return List.of();
         }
+        // 各轴单调，包围矩形已经相隔 2 世界单位时无须逐毫秒检查。
+        double[] a = first.getAffPoint(from), b = first.getAffPoint(to);
+        double[] c = second.getAffPoint(from), d = second.getAffPoint(to);
+        double dx = Math.max(0, Math.max(Math.min(a[0], b[0]), Math.min(c[0], d[0]))
+                - Math.min(Math.max(a[0], b[0]), Math.max(c[0], d[0])));
+        double dy = Math.max(0, Math.max(Math.min(a[1], b[1]), Math.min(c[1], d[1]))
+                - Math.min(Math.max(a[1], b[1]), Math.max(c[1], d[1])));
+        double worldX = 8.5 * dx, worldY = 4.5 * dy;
+        if (worldX * worldX + worldY * worldY >= 4) return List.of();
 
         TreeSet<Double> probes = new TreeSet<>();
         probes.add(from);
@@ -145,39 +165,43 @@ public final class ArcColorStateMachine {
         probes.add(to);
 
         List<ColorBridgeInterval> result = new ArrayList<>();
-        double closeFrom = Double.NaN;
-        double closeTo = Double.NaN;
+        boolean previousClose = areClose(first, second, from);
+        double closeFrom = previousClose ? from : Double.NaN;
+        double previousTime = from;
         for (double time : probes) {
-            if (areClose(first, second, time)) {
-                if (Double.isNaN(closeFrom)) {
-                    closeFrom = time;
+            boolean close = areClose(first, second, time);
+            if (close != previousClose) {
+                // 收紧相邻毫秒内的真实分离边界，不能把一毫秒取整误差当成清色宽限。
+                double left = previousTime, right = time;
+                for (int iteration = 0; iteration < 48; iteration++) {
+                    double middle = (left + right) / 2;
+                    if (areClose(first, second, middle) == previousClose) left = middle;
+                    else right = middle;
                 }
-                closeTo = time;
-                continue;
+                if (close) closeFrom = right;
+                else result.add(new ColorBridgeInterval(closeFrom, left));
             }
-            if (!Double.isNaN(closeFrom)) {
-                result.add(new ColorBridgeInterval(closeFrom, closeTo));
-            }
-            closeFrom = Double.NaN;
-            closeTo = Double.NaN;
+            previousClose = close;
+            previousTime = time;
         }
-        if (!Double.isNaN(closeFrom)) {
-            result.add(new ColorBridgeInterval(closeFrom, closeTo));
-        }
+        if (previousClose) result.add(new ColorBridgeInterval(closeFrom, to));
         return List.copyOf(result);
     }
 
-    private void clearColors(double graceEnd) {
-        graceUntil = Math.max(graceUntil, graceEnd);
-        colorsByTouch.clear();
-    }
-
-    private boolean graceActive(double time) {
-        return time <= graceUntil + TIME_EPSILON;
+    /** 只清除参与接近的颜色，第三种颜色已持有的触点不受影响。 */
+    private void changeClearColors(int colors, int delta) {
+        for (int color = 0; color < clearDepth.length; color++) {
+            if ((colors & (1 << color)) == 0) continue;
+            clearDepth[color] += delta;
+            if (delta > 0) {
+                for (Set<Integer> held : colorsByTouch.values()) held.remove(color);
+                for (Map<Integer, Cooldown> cooldowns : cooldownUntilByComponent.values()) cooldowns.remove(color);
+            }
+        }
     }
 
     private void hit(TouchStroke stroke, Arc arc, double time) {
-        if (graceActive(time)) {
+        if (clearDepth[arc.getColor()] > 0) {
             return;
         }
 
@@ -254,9 +278,9 @@ public final class ArcColorStateMachine {
      * @return 横轴按 8.5、纵轴按 4.5 换算后的世界距离平方
      */
     static double worldDistanceSquared(AffPoint first, AffPoint second) {
-        double dx = first.x() - second.x();
-        double dy = first.y() - second.y();
-        return 72.25 * dx * dx + 20.25 * dy * dy;
+        double dx = (first.x() - second.x()) * 8.5;
+        double dy = (first.y() - second.y()) * 4.5;
+        return dx * dx + dy * dy;
     }
 
     private UnsatisfiedColorException diagnostic(String reason, Arc arc, double time) {
@@ -266,7 +290,7 @@ public final class ArcColorStateMachine {
                         + "，timing=" + time);
     }
 
-    /** 明确的候选颜色不可行；调用方可尝试另一策略，普通程序异常不属于此类型。 */
+    /** 当前路径的颜色归属不可行，保留原谱及触控时刻的诊断信息。 */
     public static final class UnsatisfiedColorException extends IllegalStateException {
         UnsatisfiedColorException(String message) {
             super(message);
@@ -278,10 +302,11 @@ public final class ArcColorStateMachine {
     }
 
     private enum EventType {
-        CLEAR(0),
-        HIT(1),
-        RELEASE(2),
-        GROUP_END(3);
+        CLEAR_START(0),
+        CLEAR_END(1),
+        HIT(2),
+        RELEASE(3),
+        GROUP_END(4);
 
         private final int order;
 
@@ -297,22 +322,24 @@ public final class ArcColorStateMachine {
     record ColorBridgeInterval(double startTime, double endTime) {
     }
 
+    /** 清色开始/结束使用颜色位，物件命中和释放保留原来源身份。 */
     private record ColorEvent(double time, EventType type, TouchStroke stroke,
-                              Arc arc, int componentId, double graceEnd) {
-        static ColorEvent clear(double time, double graceEnd) {
-            return new ColorEvent(time, EventType.CLEAR, null, null, 0, graceEnd);
+                              Arc arc, int componentId, int colors) {
+        static ColorEvent clear(double time, int colors, boolean start) {
+            return new ColorEvent(time, start ? EventType.CLEAR_START : EventType.CLEAR_END,
+                    null, null, 0, colors);
         }
 
         static ColorEvent hit(double time, TouchStroke stroke, Arc arc) {
-            return new ColorEvent(time, EventType.HIT, stroke, arc, 0, Double.NaN);
+            return new ColorEvent(time, EventType.HIT, stroke, arc, 0, 0);
         }
 
         static ColorEvent release(double time, TouchStroke stroke) {
-            return new ColorEvent(time, EventType.RELEASE, stroke, null, 0, Double.NaN);
+            return new ColorEvent(time, EventType.RELEASE, stroke, null, 0, 0);
         }
 
         static ColorEvent groupEnd(double time, int componentId) {
-            return new ColorEvent(time, EventType.GROUP_END, null, null, componentId, Double.NaN);
+            return new ColorEvent(time, EventType.GROUP_END, null, null, componentId, 0);
         }
     }
 }

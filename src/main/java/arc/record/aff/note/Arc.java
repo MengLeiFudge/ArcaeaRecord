@@ -69,12 +69,12 @@ public class Arc extends Note {
     /**
      * 判断父 Arc 是否具有持续输入身份。
      *
-     * <p>悬挂 Arctap 是独立点击身份，不改变 false 父 Arc 的持续输入语义。</p>
+     * <p>悬挂 Arctap 的父线按黑线处理，仅保留独立 Arctap 输入。</p>
      *
-     * @return 原始类型为 false 时返回 true
+     * @return 原始类型为 false 且不悬挂 Arctap 时返回 true
      */
     public boolean isRealArc() {
-        return arcType.acceptsInput();
+        return arcType.acceptsInput() && arctapTimingList.isEmpty();
     }
 
     /**
@@ -106,7 +106,7 @@ public class Arc extends Note {
     /**
      * 返回父 Arc 自身携带的持续物量。
      *
-     * <p>Arctap 由独立 Note 计数；携带 Arctap 的父 Arc 仍提供持续覆盖，但自身不重复计量。</p>
+     * <p>Arctap 由独立 Note 计数；其父线不再提供持续物量。</p>
      *
      * @return 输入 Arc 的名义判定点数量
      */

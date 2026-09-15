@@ -10,13 +10,14 @@ import java.util.Set;
 import arc.record.aff.judge.AffPoint;
 import arc.record.aff.judge.HitOpportunity;
 import arc.record.aff.note.Arc;
+import arc.record.aff.note.Hold;
 
 /**
  * 从一次按下到对应抬起的完整连续触控段落。
  */
 public final class TouchStroke {
-    /** record 触点从按下到抬起的最短持续时间，单位为毫秒。 */
-    static final int MIN_PRESS_DURATION_MILLIS = 25;
+    /** 完整按下至少保持 50 ms，为整体 ±20 ms 执行偏移保留持续覆盖。 */
+    static final int MIN_PRESS_DURATION_MILLIS = 50;
 
     public enum Kind {
         CLICK,
@@ -25,13 +26,16 @@ public final class TouchStroke {
     }
 
     private final Kind kind;
+    /** 创建物理 DOWN 的来源，不能从之后合入的持续判定身份中推断。 */
+    private final int initialSourceId;
     private final double startTime;
     private double endTime;
     private final List<TouchAnchor> anchors = new ArrayList<>();
     private final List<HitOpportunity> hitOpportunities = new ArrayList<>();
     private final List<ArcColorContact> arcColorContacts = new ArrayList<>();
     private final Set<Integer> sourceIds = new LinkedHashSet<>();
-    private boolean absorbedPress;
+    /** 唯一消费本次 DOWN 的普通按键身份；持续覆盖的其他来源不占用该边沿。 */
+    private Integer pressSourceId;
 
     /**
      * 创建连续触控段落并写入唯一必需的初始按下位置。
@@ -48,6 +52,7 @@ public final class TouchStroke {
             throw new IllegalArgumentException("触控结束时间早于开始时间");
         }
         this.kind = kind;
+        this.initialSourceId = sourceId;
         this.startTime = startTime;
         this.endTime = Math.max(endTime, startTime + MIN_PRESS_DURATION_MILLIS);
         anchors.add(new TouchAnchor(startTime, initialPosition));
@@ -57,17 +62,23 @@ public final class TouchStroke {
     /** 复制模板的可变容器；锚点、窗口和未修改的长键来源仅作为只读数据共享。 */
     TouchStroke(TouchStroke source) {
         kind = source.kind;
+        initialSourceId = source.initialSourceId;
         startTime = source.startTime;
         endTime = source.endTime;
         anchors.addAll(source.anchors);
         hitOpportunities.addAll(source.hitOpportunities);
         arcColorContacts.addAll(source.arcColorContacts);
         sourceIds.addAll(source.sourceIds);
-        absorbedPress = source.absorbedPress;
+        pressSourceId = source.pressSourceId;
     }
 
     public Kind kind() {
         return kind;
+    }
+
+    /** 返回实际创建触点的来源，后续共享窗口不会改变这个身份。 */
+    int initialSourceId() {
+        return initialSourceId;
     }
 
     public double startTime() {
@@ -143,7 +154,12 @@ public final class TouchStroke {
      * @return 已认领时返回 true，禁止另一个独立按键共用该边沿
      */
     boolean hasAbsorbedPress() {
-        return absorbedPress;
+        return pressSourceId != null;
+    }
+
+    /** 返回实际消费 DOWN 的来源，用于接续及重新分配 Hold 覆盖时保留头部身份。 */
+    Integer pressSourceId() {
+        return pressSourceId;
     }
 
     /**
@@ -187,7 +203,7 @@ public final class TouchStroke {
         }
         anchors.add(anchor);
         if (!previous.position().samePosition(anchor.position())) {
-            // 25 ms约束完整按下时长；移动只需与抬起落在不同的整数毫秒。
+            // 50 ms 约束完整按下时长；移动只需与抬起落在不同的整数毫秒。
             double afterMove = Math.ceil(Math.nextUp((double) Math.round(anchor.time())));
             endTime = Math.max(endTime, afterMove);
         }
@@ -223,6 +239,11 @@ public final class TouchStroke {
         opportunities.forEach(this::addCoveredOpportunity);
     }
 
+    /** 清理接管重分配前的 Hold 覆盖注记，保留来源身份和唯一头部 DOWN。 */
+    void clearHoldOpportunities() {
+        hitOpportunities.removeIf(hit -> hit.demand().point().source() instanceof Hold);
+    }
+
     /**
      * 登记不必产生判定或路径锚点的 Arc 染色接触。
      *
@@ -241,10 +262,10 @@ public final class TouchStroke {
      * @return 此前未承接其他按下需求时返回 true
      */
     public boolean absorbPress(int sourceId) {
-        if (absorbedPress) {
+        if (pressSourceId != null) {
             return false;
         }
-        absorbedPress = true;
+        pressSourceId = sourceId;
         sourceIds.add(sourceId);
         return true;
     }
@@ -286,15 +307,14 @@ public final class TouchStroke {
         if (time >= endTime) return this;
         if (time < startTime + MIN_PRESS_DURATION_MILLIS)
             throw new IllegalArgumentException("触点裁剪后不足最短按下时长");
-        TouchStroke result = new TouchStroke(kind, startTime, time, initialPosition(),
-                sourceIds.stream().mapToInt(Integer::intValue).min().orElseThrow());
+        TouchStroke result = new TouchStroke(kind, startTime, time, initialPosition(), initialSourceId);
         double lastTime = Math.floor(Math.nextDown(time));
         for (TouchAnchor anchor : anchors) {
             if (anchor.time() <= lastTime) result.addAnchor(anchor);
         }
         result.addAnchor(new TouchAnchor(lastTime, positionAt(lastTime), false, TouchAnchor.Transition.LINEAR));
         result.mergeLogicalDemands(this);
-        result.absorbedPress = absorbedPress;
+        result.pressSourceId = pressSourceId;
         return result;
     }
 

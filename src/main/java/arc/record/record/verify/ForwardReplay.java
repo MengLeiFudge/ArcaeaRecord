@@ -22,6 +22,7 @@ import arc.record.aff.judge.CoverageDemand;
 import arc.record.aff.judge.InputJudgementRange;
 import arc.record.aff.judge.JudgePoint;
 import arc.record.aff.judge.LongNoteDemand;
+import arc.record.aff.judge.LongNoteJudgement;
 import arc.record.aff.judge.PressDemand;
 import arc.record.aff.note.Arc;
 import arc.record.aff.note.ArcTap;
@@ -43,15 +44,15 @@ import static arc.record.record.verify.ReplayReport.Status.PASS;
  * 全部分支通过才能放行；等价状态合并不依赖触点未来会不会提前抬起。</p>
  */
 public final class ForwardReplay {
-    private static final List<Integer> OFFSETS = List.of(0, -10, 10);
+    private static final List<Integer> OFFSETS = List.of(0, -20, 20);
     private static final int MAX_STATES = 4096;
     private static final int MAX_FRAMES = 2_000_000;
     private static final long MAX_CASE_NANOS = 15_000_000_000L;
     private static final double MAX_PURE_WINDOW = 25.0;
-    private static final double COLOR_GRACE_MILLIS = 500.0;
     private static final double COLOR_COOLDOWN_MILLIS = 1000.0;
-    private static final String MODEL = "理论值正向模型 v2；1 ms 加事件/判定/到期边界；"
-            + "整体操作偏移 0/-10/+10 ms；全部合法同刻输入和染色分支；"
+    private static final String MODEL = "理论值正向模型 v3；1 ms 加事件/判定/到期边界；"
+            + "整体操作偏移 0/-20/+20 ms；全部合法同刻输入和染色分支；"
+            + "长键末端采用第五项 t2+100 ms，异色分离立即重新染色；"
             + "每场景最多 4096 状态、2000000 时刻、15 s；"
             + "使用已校准投影、标准轨道和 Arc/Arctap 世界判定范围；所有 Arc 点按当前曲线位置命中；"
             + "不代表官方引擎、未知采样相位或任意逐操作卡顿的实机验证";
@@ -135,7 +136,7 @@ public final class ForwardReplay {
                 int x = integer(point, "x");
                 int y = integer(point, "y");
                 int state = integer(point, "state");
-                if (id < 0 || !ids.add(id) || (state != 0 && state != 1)) {
+                if (id <= 0 || !ids.add(id) || (state != 0 && state != 1)) {
                     throw new ScriptFormatException("同刻 ID 重复或状态非法：timing="
                             + timing + "，id=" + id);
                 }
@@ -175,10 +176,12 @@ public final class ForwardReplay {
         for (PressDemand press : model.pressDemands()) {
             Note note = press.source();
             boolean hold = note instanceof Hold;
-            double until = hold ? Math.min(note.getT2(), press.time() + 240.0)
-                    : press.time() + (note.getNoteCount() == 0 ? 100.0 : MAX_PURE_WINDOW);
+            // 普通键在 ±100 ms 内可被消费，但理论值仍须达到后续检查的 ±25 ms。
+            // Hold 头只负责解锁长键，不按普通键的大/小 Pure 划分，也不截到原 t2。
+            double until = press.time() + LongNoteJudgement.INPUT_MARGIN_MILLIS;
+            double from = press.time() - (hold ? LongNoteJudgement.INPUT_MARGIN_MILLIS : 120.0);
             Goal goal = new Goal(all.size(), note, hold ? Kind.HOLD_HEAD : Kind.TAP,
-                    new Span(press.time(), press.time() - 120.0, until), -1);
+                    new Span(press.time(), from, until), -1);
             all.add(goal);
             if (hold) {
                 holdHeads.put(note.getSourceId(), goal.id());
@@ -222,7 +225,8 @@ public final class ForwardReplay {
         private int frames;
         private int peakStates = 1;
         private double time;
-        private double graceUntil = Double.NEGATIVE_INFINITY;
+        /** 当前确实处于近域的颜色位；分离即撤销，不保存额外放行截止。 */
+        private int clearedColors;
         private long started;
         private double ratio;
         /** 物理输入批次和投影都未变化时，屏幕坐标的反解结果可继续使用。 */
@@ -400,39 +404,36 @@ public final class ForwardReplay {
             return context.resolution().convertToAffPoint(x, touch.y(), ratio);
         }
 
-        /** 游戏侧每次真实近域检测都刷新放行；不采用生成器的 17 ms 准入门槛。 */
+        /** 每个时刻重新检测真实近域，只清除参与靠近的颜色。 */
         private void updateColors() {
-            boolean close = false;
-            for (int i = 0; i < activeArcs.size() && !close; i++) {
+            int mask = 0;
+            for (int i = 0; i < activeArcs.size(); i++) {
                 Arc a = activeArcs.get(i);
                 double[] p = a.getAffPoint(time);
                 for (int j = i + 1; j < activeArcs.size(); j++) {
                     Arc b = activeArcs.get(j);
-                    if (a.getColor() == b.getColor()) {
-                        continue;
-                    }
+                    if (a.getColor() == b.getColor()) continue;
                     double[] q = b.getAffPoint(time);
                     double dx = (p[0] - q[0]) * 8.5;
                     double dy = (p[1] - q[1]) * 4.5;
-                    if (dx * dx + dy * dy < 4.0) {
-                        close = true;
-                        break;
-                    }
+                    if (dx * dx + dy * dy < 4.0) mask |= (1 << a.getColor()) | (1 << b.getColor());
                 }
             }
-            if (close) {
-                boolean entering = time > graceUntil;
-                graceUntil = time + COLOR_GRACE_MILLIS;
-                for (State state : states) {
-                    if (entering || Arrays.stream(state.owners).anyMatch(id -> id >= 0)) {
-                        state.record(new ReplayReport.TraceEvent(time, "CLEAR，500 ms 放行", null, -1));
-                    }
-                    Arrays.fill(state.owners, -1);
-                    Arrays.fill(state.cooldown, Double.NEGATIVE_INFINITY);
-                    Arrays.fill(state.releaseProtected, false);
+            int entering = mask & ~clearedColors;
+            clearedColors = mask;
+            if (mask == 0) return;
+            for (State state : states) {
+                if (entering != 0) {
+                    state.record(new ReplayReport.TraceEvent(time, "CLEAR，colors=" + mask, null, -1));
                 }
-                states = distinct(states);
+                for (int color = 0; color < state.owners.length; color++) {
+                    if ((mask & (1 << color)) == 0) continue;
+                    state.owners[color] = -1;
+                    state.cooldown[color] = Double.NEGATIVE_INFINITY;
+                    state.releaseProtected[color] = false;
+                }
             }
+            states = distinct(states);
         }
 
         /** 对同刻新边沿的处理顺序分支；每个边沿最多消费一个普通点击/未解锁 Hold。 */
@@ -525,7 +526,7 @@ public final class ForwardReplay {
 
         /** 只在实际判定区域中发现染色候选，不读取生成器的 sourceId-to-touch 对应。 */
         private void assignColors() {
-            if (time <= graceUntil || touches.isEmpty() || activeArcs.isEmpty()) {
+            if (touches.isEmpty() || activeArcs.isEmpty()) {
                 return;
             }
             List<State> assigned = new ArrayList<>();
@@ -533,7 +534,8 @@ public final class ForwardReplay {
                 int pending = 0;
                 for (Arc arc : activeArcs) {
                     int color = arc.getColor();
-                    if (state.owners[color] < 0 && time >= state.cooldown[color]) {
+                    if ((clearedColors & (1 << color)) == 0
+                            && state.owners[color] < 0 && time >= state.cooldown[color]) {
                         pending |= 1 << color;
                     }
                 }
@@ -611,7 +613,8 @@ public final class ForwardReplay {
                         } else {
                             Arc arc = (Arc) goal.source();
                             // 追加点只改变名义判定身份，固定头中心是调度器约束而非游戏空间规则。
-                            hit = (time <= graceUntil || state.owners[arc.getColor()] == touch.getKey())
+                            hit = ((clearedColors & (1 << arc.getColor())) != 0
+                                    || state.owners[arc.getColor()] == touch.getKey())
                                     && time >= state.cooldown[arc.getColor()]
                                     && arcCovers(arc, time, touch.getValue());
                         }
@@ -625,9 +628,11 @@ public final class ForwardReplay {
             states = distinct(states);
         }
 
-        /** 使用真实 Arc 位置的标准矩形，不以触点间距离代替 Arc 命中范围。 */
+        /** 首尾 ±100 ms 内保留相应端点几何，实际截止仍由原判定窗口决定。 */
         private boolean arcCovers(Arc arc, double at, AffPoint touch) {
-            double[] xy = arc.getAffPoint(at);
+            if (at < arc.getT1() - LongNoteJudgement.INPUT_MARGIN_MILLIS
+                    || at > arc.getT2() + LongNoteJudgement.INPUT_MARGIN_MILLIS) return false;
+            double[] xy = arc.getAffPoint(Math.clamp(at, arc.getT1(), arc.getT2()));
             return ArcJudgementRange.covers(new AffPoint(xy[0], xy[1]),
                     InputJudgementRange.skyPosition(touch, xy[1], ratio));
         }
@@ -658,9 +663,6 @@ public final class ForwardReplay {
             }
             if (batchIndex < batches.size()) {
                 next = Math.min(next, chartTime(batches.get(batchIndex)));
-            }
-            if (graceUntil >= time) {
-                next = Math.min(next, Math.nextUp(graceUntil));
             }
             for (State state : states) {
                 for (double expiry : state.cooldown) {

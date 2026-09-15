@@ -13,6 +13,8 @@ import arc.record.aff.note.Note;
  * <p>这里仅计算物量身份及其名义时间。实际命中时刻由判定窗口和触控调度器决定。</p>
  */
 public final class LongNoteJudgement {
+    /** 长键图形在名义首尾之外仍可接触的时间余量，单位为毫秒。 */
+    public static final double INPUT_MARGIN_MILLIS = 100.0;
     private static final double EPSILON = 1e-9;
 
     private LongNoteJudgement() {

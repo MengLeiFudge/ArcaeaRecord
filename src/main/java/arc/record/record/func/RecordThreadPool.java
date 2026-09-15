@@ -2,6 +2,8 @@ package arc.record.record.func;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -106,10 +108,12 @@ public class RecordThreadPool {
                 new ConvertThreadFactory());
         ExecutorCompletionService<FileResult> completionService = new ExecutorCompletionService<>(pool);
         List<Future<FileResult>> futures = new ArrayList<>();
+        Map<Future<FileResult>, File> fileByFuture = new HashMap<>();
         for (File file : processFiles) {
-            futures.add(completionService.submit(
-                    () -> new RecordThreadPool().processFile(
-                            file, affMap.get(file), processMap.get(file))));
+            Future<FileResult> future = completionService.submit(
+                    () -> new RecordThreadPool().processFile(file, affMap.get(file), processMap.get(file)));
+            futures.add(future);
+            fileByFuture.put(future, file);
         }
         pool.shutdown();
 
@@ -118,13 +122,26 @@ public class RecordThreadPool {
         int failedNum = 0;
         int printedPercent = -1;
         Set<File> recordFiles = new HashSet<>();
+        List<ConversionProblem> problems = new ArrayList<>();
         try {
             for (int i = 0; i < processFiles.size(); i++) {
-                FileResult result = completionService.take().get();
-                processedNum += result.processedNum();
-                recordFiles.addAll(result.recordFiles());
-                checkedNum += result.checkedNum();
-                failedNum += result.failedNum();
+                Future<FileResult> future = completionService.take();
+                File file = fileByFuture.get(future);
+                try {
+                    FileResult result = future.get();
+                    processedNum += result.processedNum();
+                    recordFiles.addAll(result.recordFiles());
+                    checkedNum += result.checkedNum();
+                    failedNum += result.failedNum();
+                    problems.addAll(result.problems());
+                    if (result.failedNum() > 0) problems.add(new ConversionProblem(file.getAbsolutePath(), "0L0",
+                            "final-replay", result.failedNum() + " 个最终 JSON 校验失败或未确定，详见 target/self-check", ""));
+                } catch (ExecutionException e) {
+                    if (e.getCause() instanceof Error error) throw error;
+                    processedNum += processMap.get(file).values().stream().mapToInt(List::size).sum();
+                    problems.add(problem(file, "all", e.getCause()));
+                    System.out.println("谱面转换失败，继续其余清单：" + file + "，" + e.getCause());
+                }
                 int percent = processedNum * 100 / targetNum;
                 if (percent != printedPercent) {
                     System.out.println("转换进度：" + df.format((double) processedNum / targetNum));
@@ -136,10 +153,6 @@ public class RecordThreadPool {
             pool.shutdownNow();
             Thread.currentThread().interrupt();
             throw new IllegalStateException("脚本转换被中断", e);
-        } catch (ExecutionException e) {
-            futures.forEach(future -> future.cancel(true));
-            pool.shutdownNow();
-            throw new IllegalStateException("脚本转换任务失败", e.getCause());
         } finally {
             if (!pool.isTerminated()) {
                 pool.shutdownNow();
@@ -156,6 +169,12 @@ public class RecordThreadPool {
         String secondStr = endTime >= 1000 ? " " + (int) (endTime / 1000) + " s" : "";
         endTime %= 1000;
         System.out.println("处理完毕，用时" + minuteStr + secondStr + " " + endTime + " ms");
+        if (!problems.isEmpty()) {
+            Path report = saveBatchProblems(processFiles.size(), targetNum, recordFiles.size(), checkedNum, problems);
+            throw new IllegalStateException("全部 " + processFiles.size() + " 张谱面已尝试，仍有 "
+                    + problems.size() + " 项问题；已生成 " + recordFiles.size() + " 份脚本，诊断=" + report);
+        }
+        System.out.println("最终校验全部通过：" + checkedNum + " 个理论值变体，" + recordFiles.size() + " 份脚本。");
         return Set.copyOf(recordFiles);
     }
 
@@ -191,6 +210,7 @@ public class RecordThreadPool {
         }
 
         List<Integer> modifiableClickIndexes = findModifiableClickIndexes(baseNoteList);
+        List<ConversionProblem> problems = new ArrayList<>();
         Set<File> recordFiles = new HashSet<>();
         int processedNum = 0;
         int checkedNum = 0;
@@ -200,75 +220,80 @@ public class RecordThreadPool {
         for (int key : requestKeys) {
             int miss = key / (aff.getNoteCount() + 1);
             int noShinyPure = key % (aff.getNoteCount() + 1);
-            File debugDir = new File(debugRoot, miss + "L" + noShinyPure + "小");
-            List<Note> noteList = SerializationUtils.clone((ArrayList<Note>) baseNoteList);
-            modifyMP(noteList, modifiableClickIndexes, miss, noShinyPure);
             List<Request> requests = requestMap.get(key);
-            if (noteList.isEmpty()) {
-                boolean isLastEternity012 = affFile.getParentFile().getName().equals("dl_lasteternity")
-                        && Integer.parseInt(affFile.getName().substring(0, 1)) < 3;
-                if (!isLastEternity012) {
-                    System.out.println("未在 " + affFile.getAbsolutePath() + " 内发现Note，需确认谱面文件状态！");
-                }
-                if (miss == 0 && noShinyPure == 0) {
-                    // 合法空谱仍生成完整的启动/返回操作，不能从全清单中静默消失。
-                    Map<RecordVariant, RecordCandidate> candidates = new HashMap<>();
-                    for (Request request : requests) {
-                        RecordVariant variant = new RecordVariant(request.resolution(), request.mirror());
-                        RecordCandidate candidate = candidates.computeIfAbsent(variant, ignored ->
-                                verifyTheoreticalRecord(aff,
-                                        buildRecordJson(aff, List.of(), 0, 0, request), request, List.of()));
-                        recordFiles.add(writeRecord(aff, 0, 0, request, request.targetDir(), candidate.json()));
+            try {
+                File debugDir = new File(debugRoot, miss + "L" + noShinyPure + "小");
+                List<Note> noteList = SerializationUtils.clone((ArrayList<Note>) baseNoteList);
+                modifyMP(noteList, modifiableClickIndexes, miss, noShinyPure);
+                if (noteList.isEmpty()) {
+                    boolean isLastEternity012 = affFile.getParentFile().getName().equals("dl_lasteternity")
+                            && Integer.parseInt(affFile.getName().substring(0, 1)) < 3;
+                    if (!isLastEternity012) {
+                        System.out.println("未在 " + affFile.getAbsolutePath() + " 内发现Note，需确认谱面文件状态！");
                     }
-                    checkedNum += candidates.size();
-                    failedNum += (int) candidates.values().stream()
-                            .filter(candidate -> candidate.report().status() != ReplayReport.Status.PASS).count();
-                }
-            } else {
-                ChartJudgementModel judgementModel = ChartJudgementModel.build(aff, noteList);
-                // modifyMP只调整普通点击；同一文件的长键路径模板求解一次，接线时复制可变状态。
-                if (arcTemplates == null) arcTemplates = scheduler.planArcs(aff, judgementModel);
-                List<TouchStroke> strokes = scheduler.schedule(aff, judgementModel, arcTemplates);
-                if (DEBUG_MODE) {
-                    saveStrokes(strokes, new File(debugDir, "touch-strokes.txt"));
-                }
-                if (!strokes.isEmpty()) {
-                    Map<Resolution, List<SimpleAction>> actionsByResolution = new EnumMap<>(Resolution.class);
-                    Map<RecordVariant, RecordCandidate> jsonByVariant = new HashMap<>();
-                    TouchStrokeRenderer renderer = new TouchStrokeRenderer();
-                    for (Request request : requests) {
-                        List<SimpleAction> actions = actionsByResolution.computeIfAbsent(
-                                request.resolution(),
-                                resolution -> renderer.render(aff, strokes, resolution));
-                        RecordVariant variant = new RecordVariant(request.resolution(), request.mirror());
-                        RecordCandidate candidate = jsonByVariant.computeIfAbsent(
-                                variant,
-                                ignored -> {
-                                    String json = buildRecordJson(aff, actions, miss, noShinyPure, request);
-                                    return miss == 0 && noShinyPure == 0
-                                            ? verifyTheoreticalRecord(aff, json, request, strokes)
-                                            : new RecordCandidate(json, null);
-                                });
-                        String json = candidate.json();
-                        if (DEBUG_MODE) {
-                            writeRecord(aff, miss, noShinyPure, request, debugDir, json);
+                    if (miss == 0 && noShinyPure == 0) {
+                        // 合法空谱仍生成完整的启动/返回操作，不能从全清单中静默消失。
+                        Map<RecordVariant, RecordCandidate> candidates = new HashMap<>();
+                        for (Request request : requests) {
+                            RecordVariant variant = new RecordVariant(request.resolution(), request.mirror());
+                            RecordCandidate candidate = candidates.computeIfAbsent(variant, ignored ->
+                                    verifyTheoreticalRecord(aff,
+                                            buildRecordJson(aff, List.of(), 0, 0, request), request, List.of()));
+                            recordFiles.add(writeRecord(aff, 0, 0, request, request.targetDir(), candidate.json()));
                         }
-                        recordFiles.add(writeRecord(
-                                aff, miss, noShinyPure, request, request.targetDir(), json));
+                        checkedNum += candidates.size();
+                        failedNum += (int) candidates.values().stream()
+                                .filter(candidate -> candidate.report().status() != ReplayReport.Status.PASS).count();
                     }
-                    for (RecordCandidate candidate : jsonByVariant.values()) {
-                        if (candidate.report() != null) {
-                            checkedNum++;
-                            if (candidate.report().status() != ReplayReport.Status.PASS) {
-                                failedNum++;
+                } else {
+                    ChartJudgementModel judgementModel = ChartJudgementModel.build(aff, noteList);
+                    // modifyMP只调整普通点击；同一文件的长键路径模板求解一次，接线时复制可变状态。
+                    if (arcTemplates == null) arcTemplates = scheduler.planArcs(aff, judgementModel);
+                    List<TouchStroke> strokes = scheduler.schedule(aff, judgementModel, arcTemplates);
+                    if (DEBUG_MODE) {
+                        saveStrokes(strokes, new File(debugDir, "touch-strokes.txt"));
+                    }
+                    if (!strokes.isEmpty()) {
+                        Map<Resolution, List<SimpleAction>> actionsByResolution = new EnumMap<>(Resolution.class);
+                        Map<RecordVariant, RecordCandidate> jsonByVariant = new HashMap<>();
+                        TouchStrokeRenderer renderer = new TouchStrokeRenderer();
+                        for (Request request : requests) {
+                            List<SimpleAction> actions = actionsByResolution.computeIfAbsent(
+                                    request.resolution(),
+                                    resolution -> renderer.render(aff, strokes, resolution));
+                            RecordVariant variant = new RecordVariant(request.resolution(), request.mirror());
+                            RecordCandidate candidate = jsonByVariant.computeIfAbsent(
+                                    variant,
+                                    ignored -> {
+                                        String json = buildRecordJson(aff, actions, miss, noShinyPure, request);
+                                        return miss == 0 && noShinyPure == 0
+                                                ? verifyTheoreticalRecord(aff, json, request, strokes)
+                                                : new RecordCandidate(json, null);
+                                    });
+                            String json = candidate.json();
+                            if (DEBUG_MODE) {
+                                writeRecord(aff, miss, noShinyPure, request, debugDir, json);
+                            }
+                            recordFiles.add(writeRecord(
+                                    aff, miss, noShinyPure, request, request.targetDir(), json));
+                        }
+                        for (RecordCandidate candidate : jsonByVariant.values()) {
+                            if (candidate.report() != null) {
+                                checkedNum++;
+                                if (candidate.report().status() != ReplayReport.Status.PASS) failedNum++;
                             }
                         }
                     }
                 }
+            } catch (java.util.concurrent.CancellationException e) {
+                throw e;
+            } catch (RuntimeException e) {
+                problems.add(problem(affFile, miss + "L" + noShinyPure + "小", e));
+                System.out.println("变体转换失败，继续其余请求：" + affFile + "，" + miss + "L" + noShinyPure + "小，" + e);
             }
             processedNum += requests.size();
         }
-        return new FileResult(processedNum, Set.copyOf(recordFiles), checkedNum, failedNum);
+        return new FileResult(processedNum, Set.copyOf(recordFiles), checkedNum, failedNum, List.copyOf(problems));
     }
 
     /**
@@ -534,8 +559,48 @@ public class RecordThreadPool {
     private record RecordVariant(Resolution resolution, boolean mirror) {
     }
 
+    /** 保留每个分数变体的故障，不因第一项失败取消其他谱面或变体。 */
+    private static ConversionProblem problem(File file, String score, Throwable error) {
+        StringWriter trace = new StringWriter();
+        error.printStackTrace(new PrintWriter(trace));
+        return new ConversionProblem(file.getAbsolutePath(), score, "conversion", error.toString(), trace.toString());
+    }
+
+    /** 完整清单结束后统一保存失败，异常阻止后续清理及把失败文件混入新 ZIP。 */
+    private static Path saveBatchProblems(int charts, int requests, int generated, int checked,
+                                          List<ConversionProblem> problems) {
+        try {
+            Path root = Path.of("target", "self-check");
+            Files.createDirectories(root);
+            Path report = Files.createTempDirectory(root, "batch-").resolve("report.json");
+            JSONObject data = new JSONObject();
+            data.put("charts", charts);
+            data.put("requests", requests);
+            data.put("generated", generated);
+            data.put("checked", checked);
+            data.put("problems", problems.stream().map(problem -> {
+                JSONObject row = new JSONObject();
+                row.put("chart", problem.chart());
+                row.put("score", problem.score());
+                row.put("stage", problem.stage());
+                row.put("reason", problem.reason());
+                row.put("trace", problem.trace());
+                return row;
+            }).toList());
+            Files.writeString(report, data.toJSONString(JSONWriter.Feature.PrettyFormat), StandardCharsets.UTF_8);
+            return report.toAbsolutePath();
+        } catch (IOException e) {
+            throw new IllegalStateException("无法保存批次故障清单：" + problems, e);
+        }
+    }
+
+    /** 原请求身份及完整失败原因，单张失败不表示其余清单失败。 */
+    private record ConversionProblem(String chart, String score, String stage, String reason, String trace) {
+    }
+
     /** 当前谱面任务生成与校验分别计数，失败自检不取消其他任务。 */
-    private record FileResult(int processedNum, Set<File> recordFiles, int checkedNum, int failedNum) {
+    private record FileResult(int processedNum, Set<File> recordFiles, int checkedNum, int failedNum,
+                              List<ConversionProblem> problems) {
     }
 
     private static class ConvertThreadFactory implements ThreadFactory {
