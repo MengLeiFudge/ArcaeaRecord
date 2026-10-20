@@ -28,9 +28,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import arc.record.aff.Aff;
+import arc.record.aff.judge.AffPoint;
 import arc.record.aff.judge.ChartJudgementModel;
+import arc.record.aff.judge.InputJudgementRange;
 import arc.record.aff.note.ArcTap;
 import arc.record.aff.note.Click;
+import arc.record.aff.note.Hold;
 import arc.record.aff.note.Note;
 import arc.record.record.model.Request;
 import arc.record.record.model.Resolution;
@@ -394,43 +397,33 @@ public class RecordThreadPool {
     }
 
     /**
-     * 找出与其他普通点击在时间和判定位置上均不相邻的 Note 下标。
+     * 排除新矩形内相邻的固定头，避免后续中心 DOWN 消费故意 Miss 或移动时刻的较早物件。
+     * Hold 头只作为竞争来源，不参与 Miss/小 Pure 分配。
      */
     private List<Integer> findModifiableClickIndexes(List<Note> noteList) {
-        List<ClickPosition> clicks = new ArrayList<>();
+        List<PressPosition> presses = new ArrayList<>();
         for (int i = 0; i < noteList.size(); i++) {
             Note note = noteList.get(i);
-            if ((!(note instanceof Click) && !(note instanceof ArcTap))
-                    || note.getNoteCount() == 0) {
-                continue;
-            }
-            double[] xy = note.getAffPoint();
-            int[] screenPoint = Resolution.R16_9_1280_720.convertToXY(xy[0], xy[1], 0);
-            clicks.add(new ClickPosition(i, note.getT1(), screenPoint[0], screenPoint[1]));
+            boolean modifiable = (note instanceof Click || note instanceof ArcTap) && note.getNoteCount() != 0;
+            if (!modifiable && !(note instanceof Hold && note.getT2() > note.getT1())) continue;
+            double[] xy = note.getAffPoint(note.getT1());
+            presses.add(new PressPosition(i, note.getT1(), new AffPoint(xy[0], xy[1]), modifiable));
         }
-        boolean[] blocked = new boolean[clicks.size()];
-        double judgeRange = Resolution.R16_9_1280_720.getMaxX() * 0.09375;
-        double judgeRangeSquared = judgeRange * judgeRange;
-        for (int i = 0; i < clicks.size(); i++) {
-            ClickPosition first = clicks.get(i);
-            for (int j = i + 1; j < clicks.size(); j++) {
-                ClickPosition second = clicks.get(j);
-                if (second.timing() - first.timing() > EFFECT_TIME) {
-                    break;
-                }
-                long dx = first.x() - second.x();
-                long dy = first.y() - second.y();
-                if (dx * dx + dy * dy <= judgeRangeSquared) {
+        boolean[] blocked = new boolean[presses.size()];
+        for (int i = 0; i < presses.size(); i++) {
+            PressPosition first = presses.get(i);
+            for (int j = i + 1; j < presses.size(); j++) {
+                PressPosition second = presses.get(j);
+                if (second.timing() - first.timing() > EFFECT_TIME) break;
+                if (InputJudgementRange.coversPress(noteList.get(first.noteIndex()), second.position())) {
                     blocked[i] = true;
                     blocked[j] = true;
                 }
             }
         }
         List<Integer> result = new ArrayList<>();
-        for (int i = 0; i < clicks.size(); i++) {
-            if (!blocked[i]) {
-                result.add(clicks.get(i).noteIndex());
-            }
+        for (int i = 0; i < presses.size(); i++) {
+            if (!blocked[i] && presses.get(i).modifiable()) result.add(presses.get(i).noteIndex());
         }
         return List.copyOf(result);
     }
@@ -553,7 +546,8 @@ public class RecordThreadPool {
         }
     }
 
-    private record ClickPosition(int noteIndex, int timing, int x, int y) {
+    /** 固定头的原时刻、AFF 中心及是否可用于分数调整。 */
+    private record PressPosition(int noteIndex, int timing, AffPoint position, boolean modifiable) {
     }
 
     private record RecordVariant(Resolution resolution, boolean mirror) {

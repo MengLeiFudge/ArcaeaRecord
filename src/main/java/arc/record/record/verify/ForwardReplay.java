@@ -50,11 +50,12 @@ public final class ForwardReplay {
     private static final long MAX_CASE_NANOS = 15_000_000_000L;
     private static final double MAX_PURE_WINDOW = 25.0;
     private static final double COLOR_COOLDOWN_MILLIS = 1000.0;
-    private static final String MODEL = "理论值正向模型 v3；1 ms 加事件/判定/到期边界；"
+    private static final String MODEL = "理论值正向模型 v5；1 ms 加事件/判定/到期边界；"
+            + "地键/Hold/天键按原中心的 AFF 横纵各 +/-0.2 判断实际命中；"
             + "整体操作偏移 0/-20/+20 ms；全部合法同刻输入和染色分支；"
             + "长键末端采用第五项 t2+100 ms，异色分离立即重新染色；"
             + "每场景最多 4096 状态、2000000 时刻、15 s；"
-            + "使用已校准投影、标准轨道和 Arc/Arctap 世界判定范围；所有 Arc 点按当前曲线位置命中；"
+            + "使用已校准投影和原 Arc 世界判定范围；所有 Arc 点按当前曲线位置命中；"
             + "不代表官方引擎、未知采样相位或任意逐操作卡顿的实机验证";
 
     /**
@@ -492,7 +493,7 @@ public final class ForwardReplay {
             for (Goal goal : activeGoals) {
                 if ((goal.kind() != Kind.TAP && goal.kind() != Kind.HOLD_HEAD)
                         || state.done.get(goal.id()) || time > goal.span().until()
-                        || !InputJudgementRange.coversPress(goal.source(), position, ratio)) {
+                        || !InputJudgementRange.coversPress(goal.source(), position)) {
                     continue;
                 }
                 double[] xy = goal.source().getAffPoint(goal.source().getT1());
@@ -609,10 +610,10 @@ public final class ForwardReplay {
                     for (Map.Entry<Integer, AffPoint> touch : positions.entrySet()) {
                         boolean hit;
                         if (goal.source() instanceof Hold hold) {
-                            hit = InputJudgementRange.coversLane(hold.getTrack(), touch.getValue(), ratio);
+                            hit = InputJudgementRange.coversPress(hold, touch.getValue());
                         } else {
                             Arc arc = (Arc) goal.source();
-                            // 追加点只改变名义判定身份，固定头中心是调度器约束而非游戏空间规则。
+                            // 追加点与普通 Arc 判定都只使用原窗口、实际位置及当前颜色。
                             hit = ((clearedColors & (1 << arc.getColor())) != 0
                                     || state.owners[arc.getColor()] == touch.getKey())
                                     && time >= state.cooldown[arc.getColor()]
